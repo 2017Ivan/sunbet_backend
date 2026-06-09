@@ -1,0 +1,62 @@
+{
+  "stake": 2500.00,
+  "currency": "TSh",
+  "bet_type": "Accumulator",
+  "matches": [
+    {
+      "id": "M001",
+      "homeTeam": "Arsenal",
+      "awayTeam": "Chelsea",
+      "market": "1X2",
+      "selection": "HOME",
+      "odds": 1.89,
+      "score":"3-2"
+    },
+    {
+      "id": "M002",
+      "homeTeam": "Barcelona",
+      "awayTeam": "Real Madrid",
+      "market": "Over/Under",
+      "selection": "Over 2.5",
+      "odds": 2.57,
+      "score":"3-2"
+    }
+  ]
+}
+
+response
+
+{
+  "id": "1695642058",
+  "time": "10:55 am",
+  "date": "Sun 01/03",
+  "result": "PENDING",
+  "stake": "2500.00",
+  "total_odds": 6.0,
+  "payout": stake x total_odds,
+  "currency": "TSh",
+  "status": "OPEN",
+  "details": {
+    "matches": [
+      {
+        "id": "M001",
+        "homeTeam": "Arsenal",
+        "awayTeam": "Chelsea",
+        "market": "1X2",
+        "selection": "co
+        "score": "2-3"
+      },
+      {
+        "id": "M002",
+        "homeTeam": "Barcelona",
+        "awayTeam": "Real Madrid",
+        "market": "Over/Under",
+        "selection": "Over 2.5",
+        "odds": 3,
+        "score": "2-3"
+      }
+    ],
+    "betType": "Accumulator",
+  },
+ 
+}

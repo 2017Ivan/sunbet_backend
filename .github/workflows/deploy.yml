@@ -1,0 +1,87 @@
+name: Deploy Node API to Server (Auto Install)
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1️⃣ Checkout
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2️⃣ Deploy Files
+      - name: Deploy via Rsync
+        uses: burnett01/rsync-deployments@5.2
+        with:
+          switches: -avzr --delete --exclude='.env'
+          path: ./
+          remote_path: /var/www/boombet_backend/
+          remote_host: ${{ secrets.SERVER_HOST }}
+          remote_user: ${{ secrets.SERVER_USER }}
+          remote_key: ${{ secrets.SERVER_SSH_KEY }}
+
+      # 3️⃣ Setup Server & Restart App
+      - name: Setup Server & Restart App
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            echo "🚀 Checking Node.js..."
+
+            if ! command -v node &> /dev/null
+            then
+              echo "📦 Installing Node.js 22..."
+              curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+              sudo apt-get install -y nodejs
+            else
+              echo "✅ Node.js $(node -v) iko tayari"
+            fi
+
+            echo "🚀 Checking PM2..."
+
+            if ! command -v pm2 &> /dev/null
+            then
+              echo "📦 Installing PM2..."
+              sudo npm install -g pm2
+            else
+              echo "✅ PM2 iko tayari"
+            fi
+
+            cd /var/www/boombet_backend
+
+            echo "📦 Installing dependencies..."
+            npm install --production
+
+            echo "🚀 Running npm start..."
+            # Angalia kama app inaendeshwa na PM2
+            if pm2 list | grep -q "boombet_backend"
+            then
+              echo "🔄 Restarting app via PM2..."
+              pm2 restart boombet_backend
+            else
+              echo "▶️ Starting app via npm start..."
+              # Hapa tunatumia npm start kuanzisha app
+              # Kumbuka: Hii itaenda background peke yake
+              npm start &
+              
+              # Tunaongeza muda kidogo kuruhusu app kuanza
+              sleep 5
+              
+              # Kisha tumiangalie kwa PM2
+              echo "🔄 Registering with PM2..."
+              pm2 start npm --name "boombet_backend" -- start
+            fi
+            
+            # Save PM2 configuration
+            pm2 save
+            pm2 startup systemd -u $USER --hp /home/$USER
+
+            echo "✅ Deployment complete! App inaendeshwa kwenye port 3000 (default)"
+            echo "📊 Angalia status: pm2 status"
+            echo "📜 Angalia logs: pm2 logs boombet_backend"
