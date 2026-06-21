@@ -60,7 +60,7 @@ jobs:
 
             echo "🚀 Running npm start..."
             # Angalia kama app inaendeshwa na PM2
-            if pm2 list | grep -q sunbet_backend"
+            if pm2 list | grep -q sunbet_backend
             then
               echo "🔄 Restarting app via PM2..."
               pm2 restart sunbet_backend
