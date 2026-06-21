@@ -19,7 +19,7 @@ jobs:
         with:
           switches: -avzr --delete --exclude='.env'
           path: ./
-          remote_path: /var/www/boombet_backend/
+          remote_path: /var/www/sunbet_backend/
           remote_host: ${{ secrets.SERVER_HOST }}
           remote_user: ${{ secrets.SERVER_USER }}
           remote_key: ${{ secrets.SERVER_SSH_KEY }}
@@ -53,17 +53,17 @@ jobs:
               echo "✅ PM2 iko tayari"
             fi
 
-            cd /var/www/boombet_backend
+            cd /var/www/sunbet_backend
 
             echo "📦 Installing dependencies..."
             npm install --production
 
             echo "🚀 Running npm start..."
             # Angalia kama app inaendeshwa na PM2
-            if pm2 list | grep -q "boombet_backend"
+            if pm2 list | grep -q sunbet_backend"
             then
               echo "🔄 Restarting app via PM2..."
-              pm2 restart boombet_backend
+              pm2 restart sunbet_backend
             else
               echo "▶️ Starting app via npm start..."
               # Hapa tunatumia npm start kuanzisha app
@@ -75,7 +75,7 @@ jobs:
               
               # Kisha tumiangalie kwa PM2
               echo "🔄 Registering with PM2..."
-              pm2 start npm --name "boombet_backend" -- start
+              pm2 start npm --name "sunbet_backend" -- start
             fi
             
             # Save PM2 configuration
@@ -84,4 +84,4 @@ jobs:
 
             echo "✅ Deployment complete! App inaendeshwa kwenye port 3000 (default)"
             echo "📊 Angalia status: pm2 status"
-            echo "📜 Angalia logs: pm2 logs boombet_backend"
+            echo "📜 Angalia logs: pm2 logs sunbet_backend"
