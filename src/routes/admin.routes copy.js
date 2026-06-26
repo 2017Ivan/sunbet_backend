@@ -1,24 +1,24 @@
 // routes/admin.routes.js
 const express = require('express');
 const router = express.Router();
-const { authenticate, authorize } = require('../middleware/auth.middleware');
+const { authenticate } = require('../middleware/auth.middleware');
+const { isAdminByPhone } = require('../middleware/admin.middleware');
 const betRepository = require('../repositories/bet.repository');
 const betService = require('../services/bet.service');
 const userController = require('../controllers/auth.controller');
 
-// ── Apply authentication and authorization ──────────────────────────────
+// Apply both authentication and admin middleware
 router.use(authenticate);
-router.use(authorize('ADMIN'));  // 👈 Dynamic - ADMIN pekee
-
-// ── BET ROUTES ──────────────────────────────────────────────────────────────
+router.use(isAdminByPhone);
 
 /**
- * GET /api/admin/bets - Get all bets
+ * GET /api/admin/bets - Get all bets (all users)
  */
 router.get('/bets', async (req, res) => {
   try {
     const { status, result, limit = 100, offset = 0 } = req.query;
     
+    // Build where clause
     let where = {};
     if (status) where.status = status;
     if (result) where.result = result;
@@ -29,6 +29,7 @@ router.get('/bets', async (req, res) => {
       order: [['createdAt', 'DESC']]
     });
     
+    // Parse selections for each bet
     const formattedBets = bets.rows.map(bet => {
       const betData = bet.toJSON();
       try {
@@ -86,7 +87,7 @@ router.get('/bets/:id', async (req, res) => {
 router.patch('/bets/:id/approve', async (req, res) => {
   try {
     const { id } = req.params;
-    const { result } = req.body;
+    const { result } = req.body; // WON or LOST
     
     if (!['WON', 'LOST'].includes(result)) {
       return res.status(400).json({ message: 'Result must be WON or LOST' });
@@ -132,7 +133,7 @@ router.delete('/bets/:id', async (req, res) => {
  */
 router.get('/stats', async (req, res) => {
   try {
-    const { Bet, sequelize } = require('../models');
+    const { Bet, User, sequelize } = require('../models');
     
     const stats = await Bet.findAll({
       attributes: [
@@ -164,31 +165,27 @@ router.get('/stats', async (req, res) => {
   }
 });
 
-// ── USER MANAGEMENT ROUTES ─────────────────────────────────────────────────
 
 /**
- * GET /api/admin/users - Get all users
+ * USER MANAGEMENT ROUTES
  */
+
+// ============ GET ALL USERS ============
 router.get('/users', userController.adminGetAllUsers);
 
-/**
- * GET /api/admin/users/:id - Get user by ID
- */
-router.get('/users/:id', userController.adminGetUserById);
+// ============ GET USER BY PHONE NUMBER ============
+router.get('/users/phone/:phone_number', userController.adminGetUserByPhone);
 
-/**
- * GET /api/admin/users/phone/:phone - Get user by phone
- */
-router.get('/users/phone/:phone', userController.adminGetUserByPhone);
+// ============ SET EXACT BALANCE BY PHONE ============
+router.put('/users/phone/:phone_number/balance', userController.adminSetBalanceByPhone);
 
-/**
- * PATCH /api/admin/users/:id/balance - Adjust user balance
- */
-router.patch('/users/:id/balance', userController.adminAdjustBalance);
+// ============ ADD BALANCE BY PHONE ============
+router.post('/users/phone/:phone_number/balance/add', userController.adminAddBalanceByPhone);
 
-/**
- * DELETE /api/admin/users/:id - Delete user
- */
-router.delete('/users/:id', userController.adminDeleteUser);
+// ============ DEDUCT BALANCE BY PHONE ============
+router.post('/users/phone/:phone_number/balance/deduct', userController.adminDeductBalanceByPhone);
+
+// ============ DELETE USER BY PHONE ============
+router.delete('/users/phone/:phone_number', userController.adminDeleteUserByPhone);
 
 module.exports = router;

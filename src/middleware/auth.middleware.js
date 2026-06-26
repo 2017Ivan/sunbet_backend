@@ -1,95 +1,116 @@
 const { verifyAccessToken } = require('../utils/jwt');
-const { body, param, validationResult } = require('express-validator');
+const { body, param, query, validationResult } = require('express-validator');
 
+// ============================================
+// 1. AUTHENTICATION - Verify Token Only
+// ============================================
 const authenticate = (req, res, next) => {
-  console.log('🔍 ===== AUTH MIDDLEWARE TRIGGERED =====');
+  console.log('🔍 ===== AUTH MIDDLEWARE =====');
   console.log('📌 Path:', req.path);
   console.log('📌 Method:', req.method);
 
   const authHeader = req.headers.authorization;
-  console.log('📨 Auth header present:', !!authHeader);
 
   if (!authHeader) {
-    console.log('❌ No authorization header found');
-    return res.status(401).json({ message: 'Access token required' });
+    console.log('❌ No authorization header');
+    return res.status(401).json({ 
+      success: false, 
+      message: 'Access token required' 
+    });
   }
 
-  console.log('📨 Auth header format:', authHeader.substring(0, 20) + '...');
   if (!authHeader.startsWith('Bearer ')) {
-    console.log('❌ Auth header does not start with Bearer');
-    return res.status(401).json({ message: 'Invalid authorization format' });
+    console.log('❌ Invalid format');
+    return res.status(401).json({ 
+      success: false, 
+      message: 'Invalid authorization format' 
+    });
   }
 
   const token = authHeader.split(' ')[1];
-  console.log('🔑 Token length:', token?.length || 0);
-  console.log('🔑 Token preview:', token?.substring(0, 20) + '...');
 
   try {
     const decoded = verifyAccessToken(token);
-    console.log('✅ Token verified successfully');
-    console.log('👤 Decoded user:', decoded);
-    
-    req.user = decoded;
-    console.log('✅ User attached to request:', req.user.id);
-    console.log('🔍 ===== AUTH MIDDLEWARE COMPLETED =====\n');
-    
+    console.log('✅ Token verified for user:', decoded.id);
+
+    req.user = {
+      id: decoded.id,
+      email: decoded.email,
+      role: decoded.role,
+      ...decoded
+    };
+
+    console.log('👤 User role:', req.user.role);
+    console.log('🔍 ===== AUTH COMPLETED =====\n');
     next();
   } catch (error) {
-    console.log('❌ Token verification failed:', error.message);
-    console.log('🔍 ===== AUTH MIDDLEWARE FAILED =====\n');
-    return res.status(401).json({ message: 'Invalid or expired token' });
+    console.log('❌ Token invalid:', error.message);
+    return res.status(401).json({ 
+      success: false, 
+      message: 'Invalid or expired token' 
+    });
   }
 };
 
-const validateBetPlacement = [
-  body('selections')
-    .isArray({ min: 1 })
-    .withMessage('At least one selection is required'),
-  body('selections.*.match')
-    .notEmpty()
-    .withMessage('Match is required'),
-  body('selections.*.selection')
-    .isIn(['1', 'X', '2'])
-    .withMessage('Selection must be 1, X, or 2'),
-  body('selections.*.odds')
-    .isFloat({ min: 1.01 })
-    .withMessage('Odds must be greater than 1'),
-  body('stake')
-    .isFloat({ min: 100 })
-    .withMessage('Stake must be at least 100'),
-  (req, res, next) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        success: false, 
-        errors: errors.array() 
+// ============================================
+// 2. AUTHORIZATION - Check Role Dynamically
+// ============================================
+const authorize = (allowedRoles) => {
+  return (req, res, next) => {
+    console.log('🔐 ===== AUTHORIZATION =====');
+    console.log('🎭 Required roles:', allowedRoles);
+    console.log('👤 User role:', req.user?.role);
+
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
       });
     }
-    next();
-  }
-];
 
-const validateSettleBet = [
-  param('betId')
-    .isInt()
-    .withMessage('Invalid bet ID'),
-  body('result')
-    .isIn(['WON', 'LOST'])
-    .withMessage('Result must be WON or LOST'),
-  (req, res, next) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        success: false, 
-        errors: errors.array() 
+    const roles = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];
+
+    if (!roles.includes(req.user.role)) {
+      console.log('❌ Access denied for role:', req.user.role);
+      return res.status(403).json({
+        success: false,
+        message: `Access denied. Required roles: ${roles.join(', ')}`
       });
     }
-    next();
-  }
-];
 
+    console.log('✅ Access granted');
+    console.log('🔐 ===== AUTHORIZATION COMPLETED =====\n');
+    next();
+  };
+};
+
+// ============================================
+// 3. VALIDATION HELPER
+// ============================================
+const validate = (validations) => {
+  return async (req, res, next) => {
+    await Promise.all(validations.map(validation => validation.run(req)));
+
+    const errors = validationResult(req);
+    if (errors.isEmpty()) {
+      return next();
+    }
+
+    return res.status(400).json({
+      success: false,
+      errors: errors.array().map(err => ({
+        field: err.path,
+        message: err.msg
+      }))
+    });
+  };
+};
+
+// ============================================
+// 4. EXPORTS
+// ============================================
 module.exports = {
-  validateBetPlacement,
-  validateSettleBet,
-  authenticate
+  authenticate,
+  authorize,
+  validate
 };

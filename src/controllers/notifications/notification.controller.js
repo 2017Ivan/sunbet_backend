@@ -1,5 +1,5 @@
 // controllers/notification.controller.js
-const notificationService = require('../services/notification.service');
+const notificationService = require('../../services/notifications/notification.service');
 
 // ============ USER CONTROLLERS (no admin logic here) ============
 

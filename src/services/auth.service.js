@@ -54,6 +54,8 @@ const loginUser = async (phone_number, password) => {
   return {
     id: user.id,
     phone_number: user.phone_number,
+    role:user.role,
+    balance:user.balance,
     accessToken,
     refreshToken
   };
@@ -256,9 +258,33 @@ const changePasswordByPhone = async (phone_number, newPassword, confirmPassword)
 };
 
 // Admin: Get all users
-const adminGetAllUsers = async (limit = 100, offset = 0) => {
-  const result = await userRepository.getAllUsers(limit, offset);
+// const adminGetAllUsers = async (limit = 50, offset = 0) => {
+//   const result = await userRepository.getAllUsers(limit, offset);
   
+//   return {
+//     total: result.count,
+//     users: result.rows.map(user => ({
+//       id: user.id,
+//       phone_number: user.phone_number,
+//       balance: user.balance,
+//       created_at: user.createdAt,
+//       updated_at: user.updatedAt
+//     }))
+//   };
+// };
+const adminGetAllUsers = async ({
+  search = '',
+  limit = 50,
+  offset = 0
+} = {}) => {
+
+  const result =
+    await userRepository.getAllUsers({
+      search,
+      limit,
+      offset
+    });
+
   return {
     total: result.count,
     users: result.rows.map(user => ({
@@ -270,6 +296,25 @@ const adminGetAllUsers = async (limit = 100, offset = 0) => {
     }))
   };
 };
+
+
+const adminGetUserById = async (id) => {
+  const user = await userRepository.findById(id);
+  
+  if (!user) {
+    throw new Error('User not found');
+  }
+  
+  return {
+    id: user.id,
+    phone_number: user.phone_number,
+    balance: user.balance,
+    role: user.role,
+    created_at: user.createdAt,
+    updated_at: user.updatedAt
+  };
+};
+
 
 // Admin: Get user by phone number
 const adminGetUserByPhone = async (phone_number) => {
@@ -398,6 +443,7 @@ module.exports = {
   resetPassword,
   changePasswordByPhone ,
   adminGetAllUsers,
+  adminGetUserById,
   adminGetUserByPhone,
   adminSetBalanceByPhone,
   adminAddBalanceByPhone,

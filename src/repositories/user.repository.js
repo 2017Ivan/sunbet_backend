@@ -1,6 +1,6 @@
 // repositories/user.repository.js
 const User = require('../models/user.model');
-
+const { Op } = require('sequelize');
 const createUser = async (data) => {
   return await User.create(data);
 };
@@ -63,14 +63,36 @@ const checkUserExists = async (phone_number) => {
 };
 
 // Get all users (with pagination option)
-const getAllUsers = async (limit = 100, offset = 0) => {
+// const getAllUsers = async (limit = 50, offset = 0) => {
+//   return await User.findAndCountAll({
+//     limit,
+//     offset,
+//     order: [['createdAt', 'DESC']]
+//   });
+// };
+
+
+const getAllUsers = async ({
+  search = '',
+  limit = 50,
+  offset = 0
+} = {}) => {
+
+  const where = {};
+
+  if (search) {
+    where.phone_number = {
+      [Op.like]: `%${search}%`
+    };
+  }
+
   return await User.findAndCountAll({
+    where,
     limit,
     offset,
     order: [['createdAt', 'DESC']]
   });
 };
-
 // Get user by phone number with full details (admin view)
 const getUserByPhoneAdmin = async (phone_number) => {
   return await User.findOne({ 

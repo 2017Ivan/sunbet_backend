@@ -23,7 +23,9 @@
     "mysql2": "^3.18.2",
     "node-fetch": "^3.3.2",
     "sequelize": "^6.37.7",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

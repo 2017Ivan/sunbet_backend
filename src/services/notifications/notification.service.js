@@ -1,5 +1,5 @@
 // services/notification.service.js
-const notificationRepository = require('../repositories/notification.repository');
+const notificationRepository = require('../../repositories/notification.repository');
 
 // ============ USER SERVICE FUNCTIONS ============
 

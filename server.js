@@ -1,42 +1,59 @@
+// ServiceWorkerRegistration.js 
+
 require('dotenv').config();
 
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
 
+const {
+    requestLogger,
+    errorMiddleware,
+    registerGlobalHandlers
+} = require('./src/utils/logger');
+
+registerGlobalHandlers();
+
+
+
 const { sequelize, initModels } = require('./src/models');
-const betRoutes = require('./src/routes/bet.routes');
 
-const footballRoutes = require('./src/routes/football.routes');
-
-const liveRoutes = require('./src/routes/live.routes');
-const efootballRoutes = require('./src/routes/efootball.routes');
-const tennisRoutes = require('./src/routes/tennis.routes');
-const basketballRoutes = require('./src/routes/basketball.routes');
-const adminBetRoutes = require('./src/routes/adminBet.routes');
-const adminUserRoutes = require('./src/routes/admin.routes');
-
-const notificationRoutes = require('./src/routes/notification.routes');
 //booking code endpoint
 const bookingCodeRoutes = require('./src/routes/bookingCode.routes');
 
-const authRoutes = require('./src/routes/auth.routes');
+const authRoutes = require('./src/routes/auth/auth.routes');
+const account = require('./src/routes/financial/money.routes')
+const bets = require('./src/routes/bets/bet.routes')
+const users = require('./src/routes/users/user.routes')
+const financial = require('./src/routes/financial/money.routes')
+
+// Import routes
+const notificationRoutes = require('./src/routes/notifications/notification.routes');
+
 const { authenticate } = require('./src/middleware/auth.middleware');
 
 const app = express();
+
+app.use(requestLogger);
+
+app.use(requestLogger);
+
+/* routes */
+
+app.use(errorMiddleware);
 const PORT = process.env.PORT || 5000;
 
 /* =========================
    GLOBAL MIDDLEWARES
 ========================= */
-// http://localhost:5174/admin-panel/balance
+
 
 const allowedOrigins = [
   'http://localhost:5173',   // local dev
   'http://localhost:5174',
-  'http://109.123.246.231:5173/',
-  'https://www.vatesbet.com/',
-  'http://www.betnover.com'
+  'http://13.140.157.161',
+  'https://boombet365.com'
+ 
 ];
 app.use(helmet());
 app.use(cors({
@@ -51,29 +68,13 @@ app.use(express.json());
 /* =========================
    ROUTES
 ========================= */
-app.use('/api/tennis', tennisRoutes);
-app.use('/api/efootball', efootballRoutes);
-app.use('/api/basketball', basketballRoutes);
-app.use('/api/live', liveRoutes);
-
-// Register admin routes
-app.use('/api/football', footballRoutes);
-app.use('/api/bets', betRoutes);
+app.use('/api/admin', users);
+app.use('/api/account', account);
+app.use('/api/bets', bets);
 app.use('/api/auth', authRoutes);
-// Register admin routes
-app.use('/api/admin', adminBetRoutes);
-app.use('/api/admin', adminUserRoutes); 
+app.use('/api/financial', financial)
 app.use('/api/notifications', notificationRoutes);
-// booking code route
-
 app.use('/api/booking-codes', bookingCodeRoutes);
-/* Protected Example Route */
-app.get('/api/profile', authenticate, (req, res) => {
-  res.json({
-    message: 'Protected route',
-    user: req.user
-  });
-});
 
 /* Health Check */
 app.get('/health', (req, res) => {
@@ -96,6 +97,7 @@ const start = async () => {
     console.log('✅ Database models synchronized');
 
     app.listen(PORT, () => {
+        // logServerStart(PORT);
       console.log(`🚀 Server running on port ${PORT}`);
     });
 

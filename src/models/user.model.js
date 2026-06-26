@@ -32,7 +32,15 @@ const User = sequelize.define('User', {
     type: DataTypes.DECIMAL(10,2),
     allowNull: false,
     defaultValue: 0.00
-  }
+  },
+  role: {
+    type: DataTypes.ENUM('USER', 'AGENT', 'ADMIN'),
+    allowNull: false,
+    defaultValue: 'USER',
+    validate: {
+      isIn: [['USER', 'AGENT', 'ADMIN']]
+    }
+  },
   
 }, {
   tableName: 'users',
