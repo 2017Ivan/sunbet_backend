@@ -52,7 +52,7 @@ const allowedOrigins = [
   'http://localhost:5173',   // local dev
   'http://localhost:5174',
   'http://13.140.157.161',
-  'https://sunbetting.com.com'
+  'https://sunbeting.com'
  
 ];
 app.use(helmet());
