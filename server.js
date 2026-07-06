@@ -1,4 +1,4 @@
-// ServiceWorkerRegistration.js 
+// Server.js 
 
 require('dotenv').config();
 
