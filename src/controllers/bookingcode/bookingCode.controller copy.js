@@ -2,7 +2,7 @@ const bookingCodeService = require('../services/bookingCode.service');
 const {
   ValidationError,
   asyncHandler
-} = require('../utils/errors');
+} = require('../../utils/errors');
 
 /**
  * Create a new booking code

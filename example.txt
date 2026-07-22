@@ -1,62 +1,36 @@
-{
-  "stake": 2500.00,
-  "currency": "TSh",
-  "bet_type": "Accumulator",
-  "matches": [
-    {
-      "id": "M001",
-      "homeTeam": "Arsenal",
-      "awayTeam": "Chelsea",
-      "market": "1X2",
-      "selection": "HOME",
-      "odds": 1.89,
-      "score":"3-2"
-    },
-    {
-      "id": "M002",
-      "homeTeam": "Barcelona",
-      "awayTeam": "Real Madrid",
-      "market": "Over/Under",
-      "selection": "Over 2.5",
-      "odds": 2.57,
-      "score":"3-2"
-    }
-  ]
-}
+data base design 
 
-response
 
-{
-  "id": "1695642058",
-  "time": "10:55 am",
-  "date": "Sun 01/03",
-  "result": "PENDING",
-  "stake": "2500.00",
-  "total_odds": 6.0,
-  "payout": stake x total_odds,
-  "currency": "TSh",
-  "status": "OPEN",
-  "details": {
-    "matches": [
-      {
-        "id": "M001",
-        "homeTeam": "Arsenal",
-        "awayTeam": "Chelsea",
-        "market": "1X2",
-        "selection": "co
-        "score": "2-3"
-      },
-      {
-        "id": "M002",
-        "homeTeam": "Barcelona",
-        "awayTeam": "Real Madrid",
-        "market": "Over/Under",
-        "selection": "Over 2.5",
-        "odds": 3,
-        "score": "2-3"
-      }
-    ],
-    "betType": "Accumulator",
-  },
- 
-}
+
+
+
+
+
+Relationships:
+text
+BookingCode (1) ─────< (1) Selection
+      │                       │
+      │                       │ (selections zote kama JSON)
+      │                       │
+      └─────< (1) Bet ────────┘
+              │
+              ├── bookingCodeId
+              └── selectionId (selection ya kwanza)
+Data Flow:
+text
+User anachagua selections 4:
+├── Selection 1: Man Utd vs Arsenal → Home (1.85)
+├── Selection 2: Juventus vs Chelsea → Draw (3.20)
+├── Selection 3: PSG vs Monaco → Away (2.10)
+└── Selection 4: Bayern vs Dortmund → Home (1.95)
+
+Booking Code 1:
+└── Selection Row 1:
+    └── selections: [sel_1, sel_2, sel_3, sel_4] (JSON array)
+
+Bet 1:
+├── userId: user_123
+├── bookingCodeId: book_1
+├── selectionId: sel_1 (selection ya kwanza)
+├── stake: 1000
+└── totalOdds: 24.23

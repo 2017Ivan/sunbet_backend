@@ -5,7 +5,7 @@ const {
   loadBookingCode,
   checkBookingCode
 } = require('../controllers/bookingCode.controller');
-const { authenticate } = require('../middleware/auth.middleware');
+const { authenticate } = require('../../middleware/auth.middleware');
 
 // Public routes (no authentication required)
 router.get('/:code/load', loadBookingCode);

@@ -1,24 +1,12 @@
-// models/index.js
-
 const sequelize = require('../config/database');
 const User = require('./user.model');
-const Bet = require('./bets/bet.model');
+const Bet = require('./bet.model');
 const PasswordReset = require('./password-reset.model');
-const BookingCode = require('./bookingcode/bookingCode.model');
+const BookingCode = require('./bookingCode.model');
 const Notification = require('./notification.model');
 const DepositTransaction = require('./depositTransaction.model');
-// Selection imeondolewa - sasa selections ziko kwenye booking code kama JSON
-
 // Collect all models
-const models = { 
-  User, 
-  Bet, 
-  PasswordReset, 
-  BookingCode, 
-  Notification, 
-  DepositTransaction
-  // Selection imeondolewa
-};
+const models = { User, Bet,PasswordReset ,BookingCode,Notification,DepositTransaction};
 
 // Initialize associations - Run associate methods if they exist
 Object.keys(models).forEach(modelName => {
@@ -33,6 +21,7 @@ const initModels = async () => {
       alter: true 
     });
   
+
     console.log('Database models synchronized successfully');
   } catch (error) {
     console.error('Error synchronizing models:', error.message);
@@ -46,7 +35,5 @@ module.exports = {
   User,
   Bet,
   PasswordReset,
-  BookingCode,
-  Notification,
-  DepositTransaction
+  BookingCode
 };

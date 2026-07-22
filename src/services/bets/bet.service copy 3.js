@@ -49,14 +49,11 @@ const calculateExpiry = () => {
 };
 
 /**
- * Create booking code with selections SILENTLY
- * - Inajumuisha time, date, league, marketType
+ * Create booking code with selections SILENTLY (hakuna selection table)
  */
-// services/bets/bet.service.js - createBookingCodeSilently
-
 const createBookingCodeSilently = async (userId, selectionsData) => {
-  // console.log('🔄 Creating booking code silently...');
-  // console.log('📝 selectionsData RECEIVED:', JSON.stringify(selectionsData, null, 2));
+  console.log('🔄 Creating booking code silently...');
+  console.log('📝 selectionsData:', JSON.stringify(selectionsData, null, 2));
   
   const code = await generateUniqueCode();
   const expiresAt = calculateExpiry();
@@ -75,8 +72,6 @@ const createBookingCodeSilently = async (userId, selectionsData) => {
     marketType: selection.marketType || '1X2'
   }));
 
-  // console.log('📝 selectionsJSON TO SAVE:', JSON.stringify(selectionsJSON, null, 2));
-
   const bookingCode = await bookingCodeRepository.create({
     code,
     userId: userId || null,
@@ -85,8 +80,8 @@ const createBookingCodeSilently = async (userId, selectionsData) => {
     status: 'ACTIVE'
   });
 
-  // console.log('✅ Booking code created:', bookingCode.id);
-  // console.log('✅ Saved selections:', JSON.stringify(bookingCode.selections, null, 2));
+  console.log('✅ Booking code created silently:', bookingCode.id);
+  console.log('✅ Selections count:', selectionsJSON.length);
 
   return {
     bookingCodeId: bookingCode.id,
@@ -94,6 +89,7 @@ const createBookingCodeSilently = async (userId, selectionsData) => {
     selections: selectionsJSON
   };
 };
+
 /**
  * Validate bet selections
  */

@@ -1,5 +1,6 @@
+// service/bookingcode/bookingCode.service.js 
 const bookingCodeRepository = require('../repositories/bookingCode.repository');
-const { ValidationError, NotFoundError } = require('../utils/errors');
+const { ValidationError, NotFoundError } = require('../../utils/errors');
 
 /**
  * Generate unique booking code (6 characters alphanumeric)

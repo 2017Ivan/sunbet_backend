@@ -1,6 +1,6 @@
-// models/bet.model.js
+// models/bets/bet.model.js
 const { DataTypes } = require('sequelize');
-const sequelize = require('../config/database');
+const sequelize = require('../../config/database');
 const { v4: uuidv4 } = require('uuid');
 
 const Bet = sequelize.define('Bet', {

@@ -1,5 +1,6 @@
+// repository/bookingcode/bookingCode.repository.js 
 const { Op } = require('sequelize');
-const { BookingCode } = require('../models');
+const { BookingCode } = require('../../models');
 
 /**
  * Create a new booking code

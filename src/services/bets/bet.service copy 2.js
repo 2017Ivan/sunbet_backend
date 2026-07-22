@@ -49,14 +49,11 @@ const calculateExpiry = () => {
 };
 
 /**
- * Create booking code with selections SILENTLY
- * - Inajumuisha time, date, league, marketType
+ * Create booking code with selections SILENTLY (hakuna selection table)
  */
-// services/bets/bet.service.js - createBookingCodeSilently
-
 const createBookingCodeSilently = async (userId, selectionsData) => {
-  // console.log('🔄 Creating booking code silently...');
-  // console.log('📝 selectionsData RECEIVED:', JSON.stringify(selectionsData, null, 2));
+  console.log('🔄 Creating booking code silently...');
+  console.log('📝 selectionsData:', JSON.stringify(selectionsData, null, 2));
   
   const code = await generateUniqueCode();
   const expiresAt = calculateExpiry();
@@ -68,14 +65,8 @@ const createBookingCodeSilently = async (userId, selectionsData) => {
     selectionValue: selection.selectionValue || selection.pick || '1',
     odds: parseFloat(selection.odds) || 1,
     score: null,
-    result: 'PENDING',
-    time: selection.time || '',
-    date: selection.date || '',
-    league: selection.league || '',
-    marketType: selection.marketType || '1X2'
+    result: 'PENDING'
   }));
-
-  // console.log('📝 selectionsJSON TO SAVE:', JSON.stringify(selectionsJSON, null, 2));
 
   const bookingCode = await bookingCodeRepository.create({
     code,
@@ -85,8 +76,8 @@ const createBookingCodeSilently = async (userId, selectionsData) => {
     status: 'ACTIVE'
   });
 
-  // console.log('✅ Booking code created:', bookingCode.id);
-  // console.log('✅ Saved selections:', JSON.stringify(bookingCode.selections, null, 2));
+  console.log('✅ Booking code created silently:', bookingCode.id);
+  console.log('✅ Selections count:', selectionsJSON.length);
 
   return {
     bookingCodeId: bookingCode.id,
@@ -94,6 +85,7 @@ const createBookingCodeSilently = async (userId, selectionsData) => {
     selections: selectionsJSON
   };
 };
+
 /**
  * Validate bet selections
  */
@@ -238,111 +230,6 @@ const placeBet = async (userId, selections, stake, bookingCodeId = null) => {
   };
 };
 
-/**
- * Settle bet (update result) - ADMIN
- */
-const settleBet = async (betId, result) => {
-  if (!betId) throw new ValidationError('Bet ID is required');
-  if (!['WON', 'LOST'].includes(result)) {
-    throw new ValidationError('Result must be WON or LOST');
-  }
-
-  const bet = await betRepository.findById(betId);
-  if (!bet) throw new NotFoundError('Bet not found');
-
-  if (bet.status !== 'OPEN') {
-    throw new ValidationError('Only OPEN bets can be settled');
-  }
-
-  if (bet.result !== 'PENDING') {
-    throw new ValidationError('Bet already has a result');
-  }
-
-  // Update bet
-  const updatedBet = await betRepository.settleBet(betId, result);
-
-  // If bet was WON, credit winnings to user
-  if (result === 'WON') {
-    await userRepository.addBalance(bet.userId, bet.potentialReturn);
-  }
-
-  return updatedBet;
-};
-
-/**
- * Cancel bet - ADMIN
- */
-const cancelBet = async (betId, userId) => {
-  const bet = await betRepository.findById(betId);
-  if (!bet) throw new NotFoundError('Bet not found');
-
-  if (bet.status !== 'OPEN') {
-    throw new ValidationError('Only OPEN bets can be cancelled');
-  }
-
-  // Refund stake to user
-  await userRepository.addBalance(userId, bet.stake);
-
-  const cancelledBet = await betRepository.cancelBet(betId);
-
-  return cancelledBet;
-};
-
-/**
- * Get pending bets - ADMIN
- */
-const getPendingBets = async () => {
-  return await betRepository.findPendingBets();
-};
-
-/**
- * Get user bet statistics
- */
-const getUserBetStats = async (userId) => {
-  if (!userId) throw new ValidationError('User ID is required');
-
-  const stats = await betRepository.getUserBetStats(userId);
-  
-  return {
-    totalBets: parseInt(stats.totalBets) || 0,
-    totalStake: parseFloat(stats.totalStake) || 0,
-    totalPotentialReturn: parseFloat(stats.totalPotentialReturn) || 0,
-    wonBets: parseInt(stats.wonBets) || 0,
-    lostBets: parseInt(stats.lostBets) || 0,
-    totalWon: parseFloat(stats.totalWon) || 0,
-    winRate: parseInt(stats.totalBets) > 0 
-      ? ((parseInt(stats.wonBets) / parseInt(stats.totalBets)) * 100).toFixed(2)
-      : 0
-  };
-};
-
-/**
- * Get bets by booking code ID
- */
-const getBetsByBookingCode = async (bookingCodeId, options = {}) => {
-  if (!bookingCodeId) throw new ValidationError('Booking code ID is required');
-
-  return await betRepository.findByBookingCodeId(bookingCodeId, options);
-};
-
-/**
- * Get bet with relations
- */
-const getBetWithRelations = async (betId) => {
-  if (!betId) throw new ValidationError('Bet ID is required');
-
-  const bet = await betRepository.getBetWithRelations(betId);
-  if (!bet) throw new NotFoundError('Bet not found');
-
-  return bet;
-};
-
 module.exports = {
-  placeBet,
-  settleBet,
-  cancelBet,
-  getPendingBets,
-  getUserBetStats,
-  getBetsByBookingCode,
-  getBetWithRelations
+  placeBet
 };

@@ -1,11 +1,11 @@
-// repositories/bet.repository.js
+// repositories/bets/bet.repository.js
 
-const { sequelize } = require('../config/database');
+const { sequelize } = require('../../config/database');
 const { Op } = require('sequelize');
-const { NotFoundError } = require('../utils/errors');
-const { generateRandomId } = require('../utils/idGenerator');
+const { NotFoundError } = require('../../utils/errors');
+const { generateRandomId } = require('../../utils/idGenerator');
 
-const { Bet, User } = require('../models'); // Import from index (not individual files)
+const { Bet, User } = require('../../models'); // Import from index (not individual files)
 
 
 /**
@@ -62,25 +62,6 @@ const findByBookingCode = async (bookingCode) => {
   });
 };
 
-/**
- * Find active bet by booking code (OPEN and PENDING)
- */
-// const findActiveByBookingCode = async (bookingCode) => {
-//   return await Bet.findOne({
-//     where: {
-//       bookingCode,
-//       status: 'OPEN',
-//       result: 'PENDING',
-//       isBookingCodeActive: true
-//     }
-//   });
-// };
-
-// repositories/bet.repository.js
-
-/**
- * Find all bets with pagination (for admin)
- */
 
 const findAll = async (where = {}, options = {}) => {
   const { limit = 100, offset = 0, order = [['createdAt', 'DESC']] } = options;
@@ -210,7 +191,7 @@ const getUserBetStats = async (userId) => {
 const getBetWithUser = async (id) => {
   return await Bet.findByPk(id, {
     include: [{
-      model: require('../models/user.model'),
+      model: require('../../models/user.model'),
       attributes: ['id', 'username', 'email', 'balance']
     }]
   });

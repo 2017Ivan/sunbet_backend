@@ -1,5 +1,7 @@
+// models/bookingcode/bookingCode.model.js
+
 const { DataTypes } = require('sequelize');
-const sequelize = require('../config/database');
+const sequelize = require('../../config/database');
 
 const BookingCode = sequelize.define('BookingCode', {
   id: {
@@ -24,10 +26,12 @@ const BookingCode = sequelize.define('BookingCode', {
     }
   },
 
+  // Selections zote kama JSON array katika booking code moja kwa moja
   selections: {
     type: DataTypes.JSON,
     allowNull: false,
-    comment: 'Array of selected games with match details'
+    defaultValue: [],
+    comment: 'Array of selections: [{ matchId, matchName, selectionType, selectionValue, odds, score, result }]'
   },
 
   presetStake: {
@@ -50,11 +54,16 @@ const BookingCode = sequelize.define('BookingCode', {
   timestamps: true
 });
 
-// Association - itaita automatic kutoka index.js
 BookingCode.associate = (models) => {
   BookingCode.belongsTo(models.User, {
     foreignKey: 'userId',
     as: 'creator',
+    targetKey: 'id'
+  });
+
+  BookingCode.hasMany(models.Bet, {
+    foreignKey: 'bookingCodeId',
+    as: 'bets',
     targetKey: 'id'
   });
 };
