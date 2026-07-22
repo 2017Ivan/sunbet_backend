@@ -30,8 +30,8 @@ Object.keys(models).forEach(modelName => {
 const initModels = async () => {
   try {
     await sequelize.sync({
-      // alter: true 
-      force: true 
+      alter: false 
+      // force: true 
     });
   
     console.log('Database models synchronized successfully');
