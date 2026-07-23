@@ -257,21 +257,7 @@ const changePasswordByPhone = async (phone_number, newPassword, confirmPassword)
   };
 };
 
-// Admin: Get all users
-// const adminGetAllUsers = async (limit = 50, offset = 0) => {
-//   const result = await userRepository.getAllUsers(limit, offset);
-  
-//   return {
-//     total: result.count,
-//     users: result.rows.map(user => ({
-//       id: user.id,
-//       phone_number: user.phone_number,
-//       balance: user.balance,
-//       created_at: user.createdAt,
-//       updated_at: user.updatedAt
-//     }))
-//   };
-// };
+
 const adminGetAllUsers = async ({
   search = '',
   limit = 50,

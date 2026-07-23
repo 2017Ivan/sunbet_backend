@@ -1,631 +1,42 @@
 // controllers/financial/money.controller.js
 const userService = require('../../services/auth.service');
-const userRepository = require('../../repositories/user.repository');
-const axios = require('axios');
-const crypto = require('crypto');
-
-// ============ PALMPESA CONFIGURATION ============
-const PALMPESA = {
-  apiToken: 'pcDa26lbTBRJ3vnOSdfqXvpXNdXH2YgUqvlrk4b9FuRYwDLpoqFDr4oO4Ia7', 
-  userId: '1083',    
-  baseUrl: 'https://palmpesa.drmlelwa.co.tz',
-  endpoints: {
-    payByLink: '/api/process-payment',
-    initiatePayment: '/api/palmpesa/initiate',
-    payViaMobile: '/api/pay-via-mobile'
-  }
-};
-
-// Store pending transactions
-if (!global.palmPesaTransactions) {
-  global.palmPesaTransactions = new Map();
-}
-
-// ============ HELPERS ============
-function formatPhoneNumber(phone) {
-  let cleaned = phone.replace(/\D/g, '');
-  if (cleaned.startsWith('0')) {
-    cleaned = '255' + cleaned.substring(1);
-  }
-  if (!cleaned.startsWith('255')) {
-    cleaned = '255' + cleaned;
-  }
-  return cleaned;
-}
-
-function generateOrderId(prefix = 'BB') {
-  return `${prefix}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
-}
-
-function generateTransactionId() {
-  return `TXN${Date.now()}${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-}
-
-/**
- * Generate random first name
- */
-function getRandomFirstName() {
-  const firstNames = [
-    'James', 'John', 'Robert', 'Michael', 'William', 'David', 'Richard', 'Joseph',
-    'Thomas', 'Charles', 'Christopher', 'Daniel', 'Matthew', 'Anthony', 'Mark',
-    'Donald', 'Steven', 'Paul', 'Andrew', 'Joshua', 'Kenneth', 'Kevin', 'Brian',
-    'George', 'Timothy', 'Ronald', 'Edward', 'Jason', 'Jeffrey', 'Ryan', 'Jacob',
-    'Gary', 'Nicholas', 'Eric', 'Jonathan', 'Stephen', 'Larry', 'Justin', 'Scott',
-    'Brandon', 'Benjamin', 'Samuel', 'Raymond', 'Gregory', 'Frank', 'Alexander',
-    'Patrick', 'Jack', 'Dennis', 'Jerry', 'Tyler', 'Aaron', 'Jose', 'Nathan',
-    'Adam', 'Henry', 'Zachary', 'Todd', 'Walter', 'Kyle', 'Amos', 'Theo',
-    'Grace', 'Anna', 'Emma', 'Elizabeth', 'Minnie', 'Margaret', 'Ida', 'Alice',
-    'Bertha', 'Sarah', 'Annie', 'Clara', 'Ella', 'Florence', 'Cora', 'Martha',
-    'Laura', 'Nellie', 'Grace', 'Carrie', 'Maude', 'Mabel', 'Hattie', 'Edith',
-    'Jennie', 'Rose', 'Julia', 'Lillian', 'Louise', 'Helen', 'Pearl', 'Ethel',
-    'Charlotte', 'Amelia', 'Olivia', 'Ava', 'Sophia', 'Isabella', 'Mia', 'Harper'
-  ];
-  return firstNames[Math.floor(Math.random() * firstNames.length)];
-}
-
-/**
- * Generate random last name
- */
-function getRandomLastName() {
-  const lastNames = [
-    'Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis',
-    'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Wilson', 'Anderson', 'Thomas',
-    'Taylor', 'Moore', 'Jackson', 'Martin', 'Lee', 'Perez', 'Thompson', 'White',
-    'Harris', 'Sanchez', 'Clark', 'Ramirez', 'Lewis', 'Robinson', 'Walker',
-    'Young', 'Allen', 'King', 'Wright', 'Scott', 'Torres', 'Nguyen', 'Hill',
-    'Flores', 'Green', 'Adams', 'Nelson', 'Baker', 'Hall', 'Rivera', 'Campbell',
-    'Mitchell', 'Carter', 'Roberts', 'Turner', 'Phillips', 'Evans', 'Collins',
-    'Edwards', 'Stewart', 'Morris', 'Murphy', 'Cook', 'Rogers', 'Morgan',
-    'Peterson', 'Cooper', 'Reed', 'Bailey', 'Bell', 'Howard', 'Ward', 'Cox',
-    'Diaz', 'Richardson', 'Wood', 'Watson', 'Brooks', 'Bennett', 'Gray', 'James',
-    'Reyes', 'Cruz', 'Hughes', 'Price', 'Myers', 'Long', 'Foster', 'Sanders',
-    'Ross', 'Powell', 'Sullivan', 'Russell', 'Ortiz', 'Jenkins', 'Perry', 'Butler',
-    'Barnes', 'Fisher', 'Henderson', 'Coleman', 'Simmons', 'Patterson', 'Jordan',
-    'Reynolds', 'Hamilton', 'Graham', 'Kim', 'Gonzalez', 'Alexander', 'Ramsey'
-  ];
-  return lastNames[Math.floor(Math.random() * lastNames.length)];
-}
-
-/**
- * Generate random email from phone number
- */
-function generateRandomEmail(phone, userId) {
-  const domains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'protonmail.com', 'mail.com'];
-  const domain = domains[Math.floor(Math.random() * domains.length)];
-  const phoneSuffix = phone.slice(-4);
-  const randomChars = crypto.randomBytes(3).toString('hex');
-  return `user${userId}${phoneSuffix}${randomChars}@${domain}`;
-}
-
-/**
- * Get valid buyer name with at least 2 words
- */
-function getValidBuyerName(user) {
-  let name = (user.full_name || user.name || '').trim();
-  
-  if (name.split(/\s+/).length >= 2) {
-    return name;
-  }
-  
-  if (name.split(/\s+/).length === 1 && name.length > 0) {
-    return `${name} ${getRandomLastName()}`;
-  }
-  
-  return `${getRandomFirstName()} ${getRandomLastName()}`;
-}
-
-/**
- * Get valid buyer email
- */
-function getValidBuyerEmail(user, phone, userId) {
-  if (user.email && user.email.includes('@')) {
-    return user.email;
-  }
-  return generateRandomEmail(phone, userId);
-}
-
-/**
- * Get valid buyer address
- */
-function getValidAddress(user) {
-  const cities = ['Dar es Salaam', 'Arusha', 'Mwanza', 'Dodoma', 'Mbeya', 'Morogoro', 'Tanga', 'Zanzibar'];
-  return (user.address || cities[Math.floor(Math.random() * cities.length)]).trim();
-}
-
-/**
- * Get valid postcode
- */
-function getValidPostcode(user) {
-  const postcodes = ['11101', '11102', '11103', '11104', '11105', '11106', '11107', '11108', '11109', '11110'];
-  return (user.postcode || postcodes[Math.floor(Math.random() * postcodes.length)]).trim();
-}
 
 // ============ DEPOSIT ============
 
 /**
- * POST /api/deposit - Initiate deposit via PalmPesa
+ * POST /api/deposit - Deposit money
  */
 const depositMoney = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { amount, phone_number } = req.body;
+    const { amount } = req.body;
 
+    // Validate amount
     if (!amount || amount < 500) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: 'Amount must be at least 500 TZS' 
+        message: 'Amount must be at least 500 TZS'
       });
     }
 
-    if (!phone_number) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Phone number is required' 
-      });
-    }
-
-    const user = await userRepository.findById(userId);
-    if (!user) {
-      return res.status(404).json({ 
-        success: false,
-        message: 'User not found' 
-      });
-    }
-
-    const formattedPhone = formatPhoneNumber(phone_number);
-    const orderId = generateOrderId('BB');
-
-    // Generate buyer details
-    const buyerName = getValidBuyerName(user);
-    const buyerEmail = getValidBuyerEmail(user, formattedPhone, userId);
-
-    // Store transaction reference
-    global.palmPesaTransactions.set(orderId, {
-      user_id: userId,
-      amount: Number(amount),
-      status: 'pending',
-      timestamp: Date.now(),
-      order_id: orderId,
-      phone: formattedPhone,
-      buyer_name: buyerName,
-      buyer_email: buyerEmail
-    });
-
-    // Prepare request payload
-    const requestData = {
-      user_id: parseInt(PALMPESA.userId),
-      vendor: "TILL61103867",
-      order_id: orderId,
-      buyer_email: buyerEmail,
-      buyer_name: buyerName,
-      buyer_phone: formattedPhone,
-      amount: Number(amount),
-      currency: "TZS",
-      redirect_url: "https://sunbeting.com/deposit-success",
-      cancel_url: "https://sunbeting.com/deposit-cancel",
-      webhook: "https://sunbeting.com/api/palmpesa-webhook",
-      buyer_remarks: `Deposit for user ${userId}`,
-      merchant_remarks: "sunbet Deposit",
-      no_of_items: 1
-    };
-
-    console.log('=== PALMPESA DEPOSIT ===');
-    console.log('Order ID:', orderId);
-    console.log('Amount:', amount);
-    console.log('Buyer Name:', buyerName);
-    console.log('Buyer Email:', buyerEmail);
-    console.log('Buyer Phone:', formattedPhone);
-
-    // Make request to PalmPesa
-    try {
-      const response = await axios.post(
-        `${PALMPESA.baseUrl}${PALMPESA.endpoints.payByLink}`,
-        requestData,
-        {
-          headers: {
-            'Authorization': `Bearer ${PALMPESA.apiToken}`,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          timeout: 30000,
-          // Don't throw on 500 status - PalmPesa returns 500 even on success
-          validateStatus: function (status) {
-            return status < 600; // Accept any status < 600
-          }
-        }
-      );
-
-      const result = response.data;
-
-      // Check if we got a payment URL (success case)
-      if (result.raw?.payment_gateway_url) {
-        // Update transaction with payment gateway URL
-        const transaction = global.palmPesaTransactions.get(orderId);
-        if (transaction) {
-          transaction.payment_url = result.raw.payment_gateway_url;
-          global.palmPesaTransactions.set(orderId, transaction);
-        }
-
-        return res.status(200).json({
-          success: true,
-          message: 'Payment initiated. Use the payment link to complete.',
-          data: {
-            order_id: orderId,
-            amount: amount,
-            payment_url: result.raw.payment_gateway_url,
-            expires_in: '30 minutes'
-          }
-        });
-      }
-
-      // Check for error case
-      if (result.error && result.error !== 'sharable payment link') {
-        throw new Error(result.error || 'Payment initiation failed');
-      }
-
-      // If we get here, something unexpected happened
-      throw new Error('Unexpected response from payment gateway');
-
-    } catch (axiosError) {
-      // Check if the error response actually contains a payment URL
-      const errorData = axiosError.response?.data;
-      if (errorData?.raw?.payment_gateway_url) {
-        // This is actually a success! PalmPesa returns 500 with the URL
-        const transaction = global.palmPesaTransactions.get(orderId);
-        if (transaction) {
-          transaction.payment_url = errorData.raw.payment_gateway_url;
-          global.palmPesaTransactions.set(orderId, transaction);
-        }
-
-        return res.status(200).json({
-          success: true,
-          message: 'Payment initiated. Use the payment link to complete.',
-          data: {
-            order_id: orderId,
-            amount: amount,
-            payment_url: errorData.raw.payment_gateway_url,
-            expires_in: '30 minutes'
-          }
-        });
-      }
-
-      // Real error - rethrow
-      throw axiosError;
-    }
-
-  } catch (error) {
-    console.error('PalmPesa deposit error:', error);
-    
-    let errorMessage = 'Failed to initiate deposit';
-    if (error.response?.data) {
-      console.error('PalmPesa Error Response:', error.response.data);
-      errorMessage = error.response.data.error || 
-                     error.response.data.exception || 
-                     error.response.data.message || 
-                     errorMessage;
-    } else if (error.message) {
-      errorMessage = error.message;
-    }
-    
-    res.status(500).json({ 
-      success: false,
-      message: errorMessage
-    });
-  }
-};
-
-// ============ REMAINING FUNCTIONS (unchanged) ============
-
-/**
- * POST /api/palmpesa-webhook - PalmPesa webhook handler
- */
-const palmPesaWebhook = async (req, res) => {
-  console.log('🔥 PALMPESA WEBHOOK HIT');
-  console.log('Body:', JSON.stringify(req.body, null, 2));
-
-  const webhookData = req.body;
-  const orderId = webhookData.reference || webhookData.order_id;
-  const paymentData = webhookData.data?.[0] || webhookData;
-
-  if (!orderId) {
-    console.error('Missing order_id in webhook');
-    return res.status(400).json({ error: 'Missing order_id' });
-  }
-
-  const transaction = global.palmPesaTransactions.get(orderId);
-
-  if (!transaction) {
-    console.error(`Transaction not found: ${orderId}`);
-    return res.status(404).json({ error: 'Transaction not found' });
-  }
-
-  // Prevent duplicate processing
-  if (transaction.status === 'completed') {
-    console.log(`Transaction ${orderId} already processed`);
-    return res.status(200).json({ message: 'Already processed' });
-  }
-
-  const paymentStatus = paymentData.payment_status || webhookData.payment_status || 'PENDING';
-
-  if (paymentStatus !== 'COMPLETED') {
-    transaction.status = 'failed';
-    global.palmPesaTransactions.set(orderId, transaction);
-    console.log(`❌ Payment ${orderId} status: ${paymentStatus}`);
-    return res.status(200).json({ message: 'Payment not completed' });
-  }
-
-  try {
-    const amount = parseFloat(paymentData.amount) || transaction.amount;
-    const depositResult = await userService.deposit(transaction.user_id, amount);
-    
-    transaction.status = 'completed';
-    transaction.balance_added = true;
-    transaction.reference = paymentData.reference || paymentData.transid || orderId;
-    transaction.transaction_id = paymentData.transid;
-    transaction.channel = paymentData.channel;
-    transaction.completed_at = new Date().toISOString();
-    global.palmPesaTransactions.set(orderId, transaction);
-
-    console.log(`✅ Balance updated: +${amount} TZS for user ${transaction.user_id}`);
-
-    return res.status(200).json({ 
-      message: 'Payment processed successfully',
-      order_id: orderId,
-      status: 'success'
-    });
-
-  } catch (error) {
-    console.error('Error updating balance:', error);
-    return res.status(500).json({ 
-      error: 'Failed to process payment',
-      order_id: orderId
-    });
-  }
-};
-
-/**
- * POST /api/deposit/mobile - Direct mobile money deposit
- */
-const depositViaMobile = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { amount, phone_number } = req.body;
-
-    if (!amount || amount < 500) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Amount must be at least 500 TZS' 
-      });
-    }
-
-    if (!phone_number) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Phone number is required' 
-      });
-    }
-
-    const user = await userRepository.findById(userId);
-    if (!user) {
-      return res.status(404).json({ 
-        success: false,
-        message: 'User not found' 
-      });
-    }
-
-    const formattedPhone = formatPhoneNumber(phone_number);
-    const transactionId = generateTransactionId();
-
-    const buyerName = getValidBuyerName(user);
-    const buyerEmail = getValidBuyerEmail(user, formattedPhone, userId);
-    const buyerAddress = getValidAddress(user);
-    const buyerPostcode = getValidPostcode(user);
-
-    const requestData = {
-      user_id: parseInt(PALMPESA.userId),
-      name: buyerName,
-      email: buyerEmail,
-      phone: formattedPhone,
-      amount: Number(amount),
-      transaction_id: transactionId,
-      address: buyerAddress,
-      postcode: buyerPostcode,
-      buyer_uuid: userId
-    };
-
-    console.log('=== PALMPESA MOBILE DEPOSIT ===');
-    console.log('Transaction ID:', transactionId);
-
-    const response = await axios.post(
-      `${PALMPESA.baseUrl}${PALMPESA.endpoints.payViaMobile}`,
-      requestData,
-      {
-        headers: {
-          'Authorization': `Bearer ${PALMPESA.apiToken}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        timeout: 30000
-      }
-    );
-
-    const result = response.data;
-
-    global.palmPesaTransactions.set(transactionId, {
-      user_id: userId,
-      amount: Number(amount),
-      status: 'pending',
-      timestamp: Date.now(),
-      order_id: result.order_id || transactionId,
-      phone: formattedPhone,
-      reference: result.response?.reference
-    });
+    // Call userService deposit
+    const result = await userService.deposit(userId, amount);
 
     res.status(200).json({
       success: true,
-      message: 'Payment request sent to your phone. Please check and approve.',
+      message: `TZS ${amount.toLocaleString()} deposited successfully. Balance: TZS ${result.new_balance.toLocaleString()}`,
       data: {
-        transaction_id: transactionId,
-        order_id: result.order_id,
-        amount: amount,
-        status: result.response?.result || 'PENDING'
+        amount: result.deposited_amount,
+        previous_balance: result.previous_balance,
+        new_balance: result.new_balance
       }
     });
 
   } catch (error) {
-    console.error('Mobile deposit error:', error);
-    res.status(500).json({ 
-      success: false,
-      message: error.response?.data?.message || 'Failed to initiate mobile payment'
-    });
-  }
-};
-
-/**
- * GET /api/payment/:reference - Check payment status
- */
-const checkPaymentStatus = async (req, res) => {
-  try {
-    const { reference } = req.params;
-    const userId = req.user.id;
-
-    const transaction = global.palmPesaTransactions.get(reference);
-
-    if (!transaction) {
-      return res.status(200).json({
-        success: false,
-        status: 'not_found',
-        message: 'Payment reference not found'
-      });
-    }
-
-    if (transaction.user_id !== userId) {
-      return res.status(403).json({
-        success: false,
-        status: 'unauthorized',
-        message: 'You do not own this payment'
-      });
-    }
-
-    if (transaction.status === 'completed') {
-      const user = await userRepository.findById(userId);
-      return res.status(200).json({
-        success: true,
-        status: 'completed',
-        data: {
-          reference: reference,
-          amount: transaction.amount,
-          new_balance: user?.balance || 0,
-          channel: transaction.channel || 'N/A',
-          completed_at: transaction.completed_at
-        }
-      });
-    }
-
-    return res.status(200).json({
-      success: false,
-      status: transaction.status || 'pending',
-      message: 'Payment pending. Please complete the payment.',
-      data: {
-        reference: reference,
-        amount: transaction.amount,
-        payment_url: transaction.payment_url || null
-      }
-    });
-
-  } catch (error) {
-    console.error('Status check error:', error);
+    console.error('Deposit error:', error);
     res.status(500).json({
       success: false,
-      status: 'error',
-      message: 'Failed to check payment status'
-    });
-  }
-};
-
-/**
- * POST /api/payment/manual-confirm - Manual confirm deposit
- */
-const manualConfirmDeposit = async (req, res) => {
-  try {
-    const { order_id } = req.body;
-    const userId = req.user.id;
-    
-    const transaction = global.palmPesaTransactions.get(order_id);
-    
-    if (!transaction) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Transaction not found' 
-      });
-    }
-    
-    if (transaction.user_id !== userId && !req.user.isAdmin) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Unauthorized' 
-      });
-    }
-    
-    if (transaction.status === 'completed') {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Already processed' 
-      });
-    }
-    
-    const depositResult = await userService.deposit(transaction.user_id, transaction.amount);
-    
-    transaction.status = 'completed';
-    transaction.manual_confirmed = true;
-    transaction.confirmed_by = userId;
-    transaction.completed_at = new Date().toISOString();
-    global.palmPesaTransactions.set(order_id, transaction);
-    
-    res.status(200).json({
-      success: true,
-      message: 'Deposit confirmed manually',
-      data: {
-        new_balance: depositResult.new_balance
-      }
-    });
-    
-  } catch (error) {
-    console.error('Manual confirm error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
-    });
-  }
-};
-
-/**
- * GET /api/payments/pending - Check pending payments
- */
-const checkPendingPayments = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const pendingPayments = [];
-    
-    for (const [orderId, transaction] of global.palmPesaTransactions.entries()) {
-      if (transaction.user_id === userId && transaction.status === 'pending') {
-        pendingPayments.push({
-          order_id: orderId,
-          amount: transaction.amount,
-          timestamp: transaction.timestamp,
-          payment_url: transaction.payment_url || null
-        });
-      }
-    }
-    
-    res.status(200).json({ 
-      success: true, 
-      data: pendingPayments 
-    });
-  } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
+      message: error.message || 'Deposit failed'
     });
   }
 };
@@ -640,49 +51,46 @@ const withdrawMoney = async (req, res) => {
     const userId = req.user.id;
     const { amount } = req.body;
 
+    // Validate amount
     if (!amount || amount < 1000) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: 'Minimum withdrawal is 1000 TZS' 
+        message: 'Minimum withdrawal is 1000 TZS'
       });
     }
 
-    const user = await userRepository.findById(userId);
-    if (!user) {
-      return res.status(404).json({ 
-        success: false,
-        message: 'User not found' 
-      });
-    }
-
-    const currentBalance = parseFloat(user.balance) || 0;
-    if (currentBalance < amount) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Insufficient balance' 
-      });
-    }
-
-    const newBalance = currentBalance - amount;
-    await userRepository.updateBalance(userId, newBalance);
+    // Call userService withdraw
+    const result = await userService.withdraw(userId, amount);
 
     res.status(200).json({
       success: true,
-      message: `TZS ${amount.toLocaleString()} withdrawn successfully. Balance: TZS ${newBalance.toLocaleString()}`,
-      data: { 
-        amount, 
-        new_balance: newBalance 
+      message: `TZS ${amount.toLocaleString()} withdrawn successfully. Balance: TZS ${result.new_balance.toLocaleString()}`,
+      data: {
+        amount: result.withdrawn_amount,
+        previous_balance: result.previous_balance,
+        new_balance: result.new_balance
       }
     });
 
   } catch (error) {
     console.error('Withdraw error:', error);
-    res.status(500).json({ 
+    
+    // Handle specific errors
+    if (error.message === 'Insufficient balance') {
+      return res.status(400).json({
+        success: false,
+        message: 'Insufficient balance'
+      });
+    }
+
+    res.status(500).json({
       success: false,
-      message: 'Withdrawal failed' 
+      message: error.message || 'Withdrawal failed'
     });
   }
 };
+
+// ============ BALANCE ============
 
 /**
  * GET /api/balance - Check balance
@@ -690,16 +98,23 @@ const withdrawMoney = async (req, res) => {
 const checkBalance = async (req, res) => {
   try {
     const userId = req.user.id;
+
+    // Call userService getBalance
     const result = await userService.getBalance(userId);
-    res.status(200).json({ 
+
+    res.status(200).json({
       success: true,
-      message: 'Balance retrieved', 
-      data: result 
+      message: 'Balance retrieved successfully',
+      data: {
+        balance: result.balance
+      }
     });
+
   } catch (error) {
-    res.status(400).json({ 
+    console.error('Balance error:', error);
+    res.status(400).json({
       success: false,
-      message: error.message 
+      message: error.message || 'Failed to get balance'
     });
   }
 };
@@ -707,11 +122,6 @@ const checkBalance = async (req, res) => {
 // ============ EXPORT ============
 module.exports = {
   depositMoney,
-  palmPesaWebhook,
-  depositViaMobile,
-  checkPaymentStatus,
-  manualConfirmDeposit,
-  checkPendingPayments,
   withdrawMoney,
   checkBalance
 };
