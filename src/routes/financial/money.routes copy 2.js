@@ -4,20 +4,13 @@ const router = express.Router();
 const { authenticate } = require('../../middleware/auth.middleware');
 const moneyController = require('../../controllers/financial/money.controller');
 
-// ============ PUBLIC WEBHOOK ============
-router.post('/palmpesa-webhook', moneyController.palmPesaWebhook);
-
-// ============ PROTECTED ROUTES ============
-
-// PalmPesa Mobile Deposit
-router.post('/deposit/palmpesa', authenticate, moneyController.depositViaPalmPesa);
-router.get('/payment/status/:transactionId', authenticate, moneyController.checkPalmPesaStatus);
-
-// Regular Deposit (Manual/Admin)
+// Deposit
 router.post('/deposit', authenticate, moneyController.depositMoney);
 
-// Withdraw & Balance
+// Withdraw
 router.post('/withdraw', authenticate, moneyController.withdrawMoney);
+
+// Balance
 router.get('/balance', authenticate, moneyController.checkBalance);
 
 module.exports = router;
