@@ -1,4 +1,4 @@
-// controllers/financial/money.controller.js
+// controllers/money.controller.js
 const userService = require('../../services/auth.service');
 const userRepository = require('../../repositories/user.repository');
 const axios = require('axios');
@@ -41,110 +41,12 @@ function generateTransactionId() {
   return `TXN${Date.now()}${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
 }
 
-/**
- * Generate random first name
- */
-function getRandomFirstName() {
-  const firstNames = [
-    'James', 'John', 'Robert', 'Michael', 'William', 'David', 'Richard', 'Joseph',
-    'Thomas', 'Charles', 'Christopher', 'Daniel', 'Matthew', 'Anthony', 'Mark',
-    'Donald', 'Steven', 'Paul', 'Andrew', 'Joshua', 'Kenneth', 'Kevin', 'Brian',
-    'George', 'Timothy', 'Ronald', 'Edward', 'Jason', 'Jeffrey', 'Ryan', 'Jacob',
-    'Gary', 'Nicholas', 'Eric', 'Jonathan', 'Stephen', 'Larry', 'Justin', 'Scott',
-    'Brandon', 'Benjamin', 'Samuel', 'Raymond', 'Gregory', 'Frank', 'Alexander',
-    'Patrick', 'Jack', 'Dennis', 'Jerry', 'Tyler', 'Aaron', 'Jose', 'Nathan',
-    'Adam', 'Henry', 'Zachary', 'Todd', 'Walter', 'Kyle', 'Amos', 'Theo',
-    'Grace', 'Anna', 'Emma', 'Elizabeth', 'Minnie', 'Margaret', 'Ida', 'Alice',
-    'Bertha', 'Sarah', 'Annie', 'Clara', 'Ella', 'Florence', 'Cora', 'Martha',
-    'Laura', 'Nellie', 'Grace', 'Carrie', 'Maude', 'Mabel', 'Hattie', 'Edith',
-    'Jennie', 'Rose', 'Julia', 'Lillian', 'Louise', 'Helen', 'Pearl', 'Ethel',
-    'Charlotte', 'Amelia', 'Olivia', 'Ava', 'Sophia', 'Isabella', 'Mia', 'Harper'
-  ];
-  return firstNames[Math.floor(Math.random() * firstNames.length)];
-}
-
-/**
- * Generate random last name
- */
-function getRandomLastName() {
-  const lastNames = [
-    'Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis',
-    'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Wilson', 'Anderson', 'Thomas',
-    'Taylor', 'Moore', 'Jackson', 'Martin', 'Lee', 'Perez', 'Thompson', 'White',
-    'Harris', 'Sanchez', 'Clark', 'Ramirez', 'Lewis', 'Robinson', 'Walker',
-    'Young', 'Allen', 'King', 'Wright', 'Scott', 'Torres', 'Nguyen', 'Hill',
-    'Flores', 'Green', 'Adams', 'Nelson', 'Baker', 'Hall', 'Rivera', 'Campbell',
-    'Mitchell', 'Carter', 'Roberts', 'Turner', 'Phillips', 'Evans', 'Collins',
-    'Edwards', 'Stewart', 'Morris', 'Murphy', 'Cook', 'Rogers', 'Morgan',
-    'Peterson', 'Cooper', 'Reed', 'Bailey', 'Bell', 'Howard', 'Ward', 'Cox',
-    'Diaz', 'Richardson', 'Wood', 'Watson', 'Brooks', 'Bennett', 'Gray', 'James',
-    'Reyes', 'Cruz', 'Hughes', 'Price', 'Myers', 'Long', 'Foster', 'Sanders',
-    'Ross', 'Powell', 'Sullivan', 'Russell', 'Ortiz', 'Jenkins', 'Perry', 'Butler',
-    'Barnes', 'Fisher', 'Henderson', 'Coleman', 'Simmons', 'Patterson', 'Jordan',
-    'Reynolds', 'Hamilton', 'Graham', 'Kim', 'Gonzalez', 'Alexander', 'Ramsey'
-  ];
-  return lastNames[Math.floor(Math.random() * lastNames.length)];
-}
-
-/**
- * Generate random email from phone number
- */
-function generateRandomEmail(phone, userId) {
-  const domains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'protonmail.com', 'mail.com'];
-  const domain = domains[Math.floor(Math.random() * domains.length)];
-  const phoneSuffix = phone.slice(-4);
-  const randomChars = crypto.randomBytes(3).toString('hex');
-  return `user${userId}${phoneSuffix}${randomChars}@${domain}`;
-}
-
-/**
- * Get valid buyer name with at least 2 words
- */
-function getValidBuyerName(user) {
-  let name = (user.full_name || user.name || '').trim();
-  
-  if (name.split(/\s+/).length >= 2) {
-    return name;
-  }
-  
-  if (name.split(/\s+/).length === 1 && name.length > 0) {
-    return `${name} ${getRandomLastName()}`;
-  }
-  
-  return `${getRandomFirstName()} ${getRandomLastName()}`;
-}
-
-/**
- * Get valid buyer email
- */
-function getValidBuyerEmail(user, phone, userId) {
-  if (user.email && user.email.includes('@')) {
-    return user.email;
-  }
-  return generateRandomEmail(phone, userId);
-}
-
-/**
- * Get valid buyer address
- */
-function getValidAddress(user) {
-  const cities = ['Dar es Salaam', 'Arusha', 'Mwanza', 'Dodoma', 'Mbeya', 'Morogoro', 'Tanga', 'Zanzibar'];
-  return (user.address || cities[Math.floor(Math.random() * cities.length)]).trim();
-}
-
-/**
- * Get valid postcode
- */
-function getValidPostcode(user) {
-  const postcodes = ['11101', '11102', '11103', '11104', '11105', '11106', '11107', '11108', '11109', '11110'];
-  return (user.postcode || postcodes[Math.floor(Math.random() * postcodes.length)]).trim();
-}
-
 // ============ DEPOSIT ============
 
 /**
  * POST /api/deposit - Initiate deposit via PalmPesa
  */
+
 const depositMoney = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -174,10 +76,7 @@ const depositMoney = async (req, res) => {
 
     const formattedPhone = formatPhoneNumber(phone_number);
     const orderId = generateOrderId('BB');
-
-    // Generate buyer details
-    const buyerName = getValidBuyerName(user);
-    const buyerEmail = getValidBuyerEmail(user, formattedPhone, userId);
+    const transactionId = generateTransactionId();
 
     // Store transaction reference
     global.palmPesaTransactions.set(orderId, {
@@ -186,18 +85,16 @@ const depositMoney = async (req, res) => {
       status: 'pending',
       timestamp: Date.now(),
       order_id: orderId,
-      phone: formattedPhone,
-      buyer_name: buyerName,
-      buyer_email: buyerEmail
+      phone: formattedPhone
     });
 
     // Prepare request payload
     const requestData = {
-      user_id: parseInt(PALMPESA.userId),
+      user_id: PALMPESA.userId,
       vendor: "TILL61103867",
       order_id: orderId,
-      buyer_email: buyerEmail,
-      buyer_name: buyerName,
+      buyer_email: user.email || `${userId}@user.com`,
+      buyer_name: user.full_name || user.name || "Customer",
       buyer_phone: formattedPhone,
       amount: Number(amount),
       currency: "TZS",
@@ -212,109 +109,49 @@ const depositMoney = async (req, res) => {
     console.log('=== PALMPESA DEPOSIT ===');
     console.log('Order ID:', orderId);
     console.log('Amount:', amount);
-    console.log('Buyer Name:', buyerName);
-    console.log('Buyer Email:', buyerEmail);
-    console.log('Buyer Phone:', formattedPhone);
 
     // Make request to PalmPesa
-    try {
-      const response = await axios.post(
-        `${PALMPESA.baseUrl}${PALMPESA.endpoints.payByLink}`,
-        requestData,
-        {
-          headers: {
-            'Authorization': `Bearer ${PALMPESA.apiToken}`,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          timeout: 30000,
-          // Don't throw on 500 status - PalmPesa returns 500 even on success
-          validateStatus: function (status) {
-            return status < 600; // Accept any status < 600
-          }
-        }
-      );
-
-      const result = response.data;
-
-      // Check if we got a payment URL (success case)
-      if (result.raw?.payment_gateway_url) {
-        // Update transaction with payment gateway URL
-        const transaction = global.palmPesaTransactions.get(orderId);
-        if (transaction) {
-          transaction.payment_url = result.raw.payment_gateway_url;
-          global.palmPesaTransactions.set(orderId, transaction);
-        }
-
-        return res.status(200).json({
-          success: true,
-          message: 'Payment initiated. Use the payment link to complete.',
-          data: {
-            order_id: orderId,
-            amount: amount,
-            payment_url: result.raw.payment_gateway_url,
-            expires_in: '30 minutes'
-          }
-        });
+    const response = await axios.post(
+      `${PALMPESA.baseUrl}${PALMPESA.endpoints.payByLink}`,
+      requestData,
+      {
+        headers: {
+          'Authorization': `Bearer ${PALMPESA.apiToken}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        timeout: 30000
       }
+    );
 
-      // Check for error case
-      if (result.error && result.error !== 'sharable payment link') {
-        throw new Error(result.error || 'Payment initiation failed');
-      }
+    const result = response.data;
 
-      // If we get here, something unexpected happened
-      throw new Error('Unexpected response from payment gateway');
-
-    } catch (axiosError) {
-      // Check if the error response actually contains a payment URL
-      const errorData = axiosError.response?.data;
-      if (errorData?.raw?.payment_gateway_url) {
-        // This is actually a success! PalmPesa returns 500 with the URL
-        const transaction = global.palmPesaTransactions.get(orderId);
-        if (transaction) {
-          transaction.payment_url = errorData.raw.payment_gateway_url;
-          global.palmPesaTransactions.set(orderId, transaction);
-        }
-
-        return res.status(200).json({
-          success: true,
-          message: 'Payment initiated. Use the payment link to complete.',
-          data: {
-            order_id: orderId,
-            amount: amount,
-            payment_url: errorData.raw.payment_gateway_url,
-            expires_in: '30 minutes'
-          }
-        });
-      }
-
-      // Real error - rethrow
-      throw axiosError;
+    // Update transaction with payment gateway URL
+    const transaction = global.palmPesaTransactions.get(orderId);
+    if (transaction) {
+      transaction.payment_url = result.raw?.payment_gateway_url;
+      global.palmPesaTransactions.set(orderId, transaction);
     }
+
+    res.status(200).json({
+      success: true,
+      message: 'Payment initiated. Use the payment link to complete.',
+      data: {
+        order_id: orderId,
+        amount: amount,
+        payment_url: result.raw?.payment_gateway_url || null,
+        expires_in: '30 minutes'
+      }
+    });
 
   } catch (error) {
     console.error('PalmPesa deposit error:', error);
-    
-    let errorMessage = 'Failed to initiate deposit';
-    if (error.response?.data) {
-      console.error('PalmPesa Error Response:', error.response.data);
-      errorMessage = error.response.data.error || 
-                     error.response.data.exception || 
-                     error.response.data.message || 
-                     errorMessage;
-    } else if (error.message) {
-      errorMessage = error.message;
-    }
-    
     res.status(500).json({ 
       success: false,
-      message: errorMessage
+      message: error.response?.data?.message || 'Failed to initiate deposit'
     });
   }
 };
-
-// ============ REMAINING FUNCTIONS (unchanged) ============
 
 /**
  * POST /api/palmpesa-webhook - PalmPesa webhook handler
@@ -416,20 +253,15 @@ const depositViaMobile = async (req, res) => {
     const formattedPhone = formatPhoneNumber(phone_number);
     const transactionId = generateTransactionId();
 
-    const buyerName = getValidBuyerName(user);
-    const buyerEmail = getValidBuyerEmail(user, formattedPhone, userId);
-    const buyerAddress = getValidAddress(user);
-    const buyerPostcode = getValidPostcode(user);
-
     const requestData = {
-      user_id: parseInt(PALMPESA.userId),
-      name: buyerName,
-      email: buyerEmail,
+      user_id: PALMPESA.userId,
+      name: user.full_name || user.name || "Customer",
+      email: user.email || `${userId}@user.com`,
       phone: formattedPhone,
       amount: Number(amount),
       transaction_id: transactionId,
-      address: buyerAddress,
-      postcode: buyerPostcode,
+      address: user.address || "Dar es Salaam",
+      postcode: "11111",
       buyer_uuid: userId
     };
 
@@ -451,6 +283,7 @@ const depositViaMobile = async (req, res) => {
 
     const result = response.data;
 
+    // Store transaction
     global.palmPesaTransactions.set(transactionId, {
       user_id: userId,
       amount: Number(amount),
@@ -706,12 +539,15 @@ const checkBalance = async (req, res) => {
 
 // ============ EXPORT ============
 module.exports = {
+  // Deposit
   depositMoney,
   palmPesaWebhook,
   depositViaMobile,
   checkPaymentStatus,
   manualConfirmDeposit,
   checkPendingPayments,
+  
+  // Withdraw
   withdrawMoney,
   checkBalance
 };
