@@ -4,22 +4,14 @@ const router = express.Router();
 const { authenticate } = require('../../middleware/auth.middleware');
 const moneyController = require('../../controllers/financial/money.controller');
 
-// ============ PUBLIC WEBHOOKS ============
-// PalmPesa webhook handler (renamed from mongike-webhook)
-router.post('/mongike-webhook', moneyController.palmPesaWebhook);
+// Public webhook
+router.post('/mongike-webhook', moneyController.mongikeWebhook);
 
-// ============ PROTECTED ROUTES ============
-
-// Deposit routes
+// Protected
 router.post('/deposit', authenticate, moneyController.depositMoney);
-router.post('/deposit/mobile', authenticate, moneyController.depositViaMobile);
-
-// Payment status routes
 router.get('/payment/:reference', authenticate, moneyController.checkPaymentStatus);
-router.get('/payments/pending', authenticate, moneyController.checkPendingPayments);
 router.post('/payment/manual-confirm', authenticate, moneyController.manualConfirmDeposit);
-
-// Balance & withdrawal routes
+router.get('/payments/pending', authenticate, moneyController.checkPendingPayments);
 router.post('/withdraw', authenticate, moneyController.withdrawMoney);
 router.get('/balance', authenticate, moneyController.checkBalance);
 
