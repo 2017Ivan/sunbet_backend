@@ -32,59 +32,6 @@ function convertToLocalFormat(phone) {
   return cleaned;
 }
 
-// Helper function to query PalmPesa status directly
-async function fetchPalmPesaOrderStatus(orderId) {
-  try {
-    const response = await axios.post(
-      `${PALMPESA.baseUrl}/api/order-status`,
-      { order_id: orderId },
-      {
-        headers: {
-          'Authorization': `Bearer ${PALMPESA.apiToken}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        timeout: 10000
-      }
-    );
-    return response.data;
-  } catch (err) {
-    console.error('❌ Error fetching direct status from PalmPesa:', err.message);
-    return null;
-  }
-}
-
-// Helper function to complete transaction & update user balance
-async function processSuccessfulPayment(transaction, transactionKey, paymentData) {
-  if (transaction.status === 'completed') {
-    return transaction; // Prevent double processing
-  }
-
-  const amount = parseFloat(paymentData.amount) || transaction.amount;
-  
-  // Call userService deposit to update balance
-  const depositResult = await userService.deposit(transaction.user_id, amount);
-
-  transaction.status = 'completed';
-  transaction.balance_added = true;
-  transaction.new_balance = depositResult.new_balance;
-  transaction.completed_at = new Date().toISOString();
-
-  if (paymentData.transid) {
-    transaction.transaction_reference = paymentData.transid;
-  }
-  if (paymentData.channel) {
-    transaction.channel = paymentData.channel;
-  }
-
-  global.palmPesaTransactions.set(transactionKey, transaction);
-
-  console.log(`✅ Balance updated: +${amount} TZS for user ${transaction.user_id}`);
-  console.log(`💰 New balance: ${depositResult.new_balance}`);
-
-  return transaction;
-}
-
 // ============ PALMPESA DEPOSIT (Mobile Money) ============
 
 /**
@@ -232,20 +179,44 @@ const palmPesaWebhook = async (req, res) => {
     return res.status(200).json({ message: 'Already processed' });
   }
 
-  const paymentStatus = (paymentData.payment_status || webhookData.payment_status || 'PENDING').toUpperCase();
+  const paymentStatus = paymentData.payment_status || webhookData.payment_status || 'PENDING';
+
+  // Update transaction status
+  foundTransaction.status = paymentStatus.toLowerCase();
+  foundTransaction.updated_at = new Date().toISOString();
+
+  if (paymentData.transid) {
+    foundTransaction.transaction_reference = paymentData.transid;
+  }
+  if (paymentData.channel) {
+    foundTransaction.channel = paymentData.channel;
+  }
+
+  global.palmPesaTransactions.set(foundKey, foundTransaction);
 
   // If payment is COMPLETED, update user balance
   if (paymentStatus === 'COMPLETED') {
     try {
-      await processSuccessfulPayment(foundTransaction, foundKey, paymentData);
+      const amount = parseFloat(paymentData.amount) || foundTransaction.amount;
+      
+      // Call userService deposit to update balance
+      const depositResult = await userService.deposit(foundTransaction.user_id, amount);
+
+      // Update transaction with deposit info
+      foundTransaction.balance_added = true;
+      foundTransaction.new_balance = depositResult.new_balance;
+      foundTransaction.completed_at = new Date().toISOString();
+      global.palmPesaTransactions.set(foundKey, foundTransaction);
+
+      console.log(`✅ Balance updated: +${amount} TZS for user ${foundTransaction.user_id}`);
+      console.log(`💰 New balance: ${depositResult.new_balance}`);
+
     } catch (error) {
-      console.error('❌ Error processing webhook balance update:', error);
+      console.error('❌ Error updating balance:', error);
+      // Don't return error to webhook - we want PalmPesa to get 200 OK
     }
   } else {
-    foundTransaction.status = paymentStatus.toLowerCase();
-    foundTransaction.updated_at = new Date().toISOString();
-    global.palmPesaTransactions.set(foundKey, foundTransaction);
-    console.log(`ℹ️ Payment ${foundKey} status updated to: ${paymentStatus}`);
+    console.log(`❌ Payment ${foundKey} status: ${paymentStatus}`);
   }
 
   res.status(200).json({
@@ -279,24 +250,6 @@ const checkPalmPesaStatus = async (req, res) => {
         success: false,
         message: 'Unauthorized'
       });
-    }
-
-    // Fallback Check: Kama status bado ni 'pending', pigia PalmPesa API moja kwa moja
-    if (transaction.status === 'pending') {
-      const orderStatusRes = await fetchPalmPesaOrderStatus(transaction.order_id);
-
-      if (orderStatusRes && orderStatusRes.data && orderStatusRes.data.length > 0) {
-        const liveData = orderStatusRes.data[0];
-        const liveStatus = (liveData.payment_status || 'PENDING').toUpperCase();
-
-        if (liveStatus === 'COMPLETED') {
-          await processSuccessfulPayment(transaction, transactionId, liveData);
-        } else if (liveStatus === 'FAILED') {
-          transaction.status = 'failed';
-          transaction.updated_at = new Date().toISOString();
-          global.palmPesaTransactions.set(transactionId, transaction);
-        }
-      }
     }
 
     res.status(200).json({
