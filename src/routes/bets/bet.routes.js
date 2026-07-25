@@ -16,7 +16,7 @@ router.get('/booking-code/:bookingCodeId', betController.getBetsByBookingCode);
 router.get('/stats/my', betController.getUserBetStats);
 
 // ── ADMIN ROUTES ──────────────────────────────────────────────────────────
-router.use('/admin', authorize('ADMIN'));
+router.use('/admin', authorize(['ADMIN', 'AGENT']));
 
 router.get('/admin/bets', betController.adminGetAllBets);
 router.get('/admin/bets/:id', betController.adminGetBetById);

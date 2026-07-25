@@ -18,8 +18,8 @@ router.get('/:id', bookingCodeController.getBookingCodeById);
 router.patch('/:id/deactivate', bookingCodeController.deactivateBookingCode);
 
 // ── Admin routes ─────────────────────────────────────────────────────────────
-router.get('/admin/all', authorize('ADMIN'), bookingCodeController.getAllBookingCodes);
-router.patch('/admin/:id/score', authorize('ADMIN'), bookingCodeController.updateSelectionScore);
-router.patch('/admin/:id/deactivate', authorize('ADMIN'), bookingCodeController.deactivateBookingCode);
+router.get('/admin/all', authorize(['ADMIN', 'AGENT']), bookingCodeController.getAllBookingCodes);
+router.patch('/admin/:id/score', authorize(['ADMIN', 'AGENT']), bookingCodeController.updateSelectionScore);
+router.patch('/admin/:id/deactivate', authorize(['ADMIN', 'AGENT']), bookingCodeController.deactivateBookingCode);
 
 module.exports = router;
