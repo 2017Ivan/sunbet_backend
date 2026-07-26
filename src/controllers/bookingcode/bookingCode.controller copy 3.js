@@ -7,7 +7,7 @@ const {
 } = require('../../utils/errors');
 
 /**
- * Create a new booking code (PUBLIC)
+ * Create a new booking code (PUBLIC - no login required)
  * POST /api/booking-codes/create
  * Body: { selections: [{ matchId, matchName, selectionType, selectionValue, odds, time, date, league, marketType }] }
  */
@@ -89,12 +89,11 @@ const checkBookingCode = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get user's booking codes (PUBLIC)
+ * Get user's booking codes (AUTHENTICATED)
  * GET /api/booking-codes/my
  */
 const getUserBookingCodes = asyncHandler(async (req, res) => {
-  // Inachukua userId kama ipo kwenye query au req.user, au inaleta zote/zilizopo
-  const userId = req.user?.id || req.query.userId || null;
+  const userId = req.user.id;
 
   const bookingCodes = await bookingCodeService.getUserBookingCodes(userId);
 
@@ -105,7 +104,7 @@ const getUserBookingCodes = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get all booking codes (PUBLIC)
+ * Get all booking codes (ADMIN only)
  * GET /api/booking-codes/admin/all
  */
 const getAllBookingCodes = asyncHandler(async (req, res) => {
@@ -132,11 +131,12 @@ const getAllBookingCodes = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get booking code by ID (PUBLIC - authentication check removed)
+ * Get booking code by ID (AUTHENTICATED)
  * GET /api/booking-codes/:id
  */
 const getBookingCodeById = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const userId = req.user.id;
 
   const bookingCode = await bookingCodeService.getBookingCodeById(id);
 
@@ -147,6 +147,13 @@ const getBookingCodeById = asyncHandler(async (req, res) => {
     });
   }
 
+  if (bookingCode.userId !== userId && req.user.role !== 'ADMIN') {
+    return res.status(403).json({
+      success: false,
+      message: 'Unauthorized'
+    });
+  }
+
   res.json({
     success: true,
     data: bookingCode
@@ -154,7 +161,7 @@ const getBookingCodeById = asyncHandler(async (req, res) => {
 });
 
 /**
- * Update selection score (PUBLIC - admin check removed)
+ * Update selection score (ADMIN only)
  * PATCH /api/booking-codes/:id/score
  * Body: { matchId, homeScore, awayScore, selectionType, marketType }
  */
@@ -223,11 +230,12 @@ const updateSelectionScore = asyncHandler(async (req, res) => {
 });
 
 /**
- * Deactivate booking code (PUBLIC - authentication check removed)
+ * Deactivate booking code (AUTHENTICATED)
  * PATCH /api/booking-codes/:id/deactivate
  */
 const deactivateBookingCode = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const userId = req.user.id;
 
   const bookingCode = await bookingCodeService.getBookingCodeById(id);
 
@@ -235,6 +243,13 @@ const deactivateBookingCode = asyncHandler(async (req, res) => {
     return res.status(404).json({
       success: false,
       message: 'Booking code not found'
+    });
+  }
+
+  if (bookingCode.userId !== userId && req.user.role !== 'ADMIN') {
+    return res.status(403).json({
+      success: false,
+      message: 'Unauthorized'
     });
   }
 
