@@ -37,7 +37,8 @@ const allowedOrigins = [
     'http://localhost:5173',
     'http://localhost:5174',
     'http://13.140.157.161',
-    'https://sunbeting.com'
+    'https://sunbeting.com',
+    'https://www.sunbeting.com'
 ];
 
 app.use(requestLogger);
