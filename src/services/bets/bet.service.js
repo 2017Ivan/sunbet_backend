@@ -206,7 +206,7 @@ const placeBet = async (userId, selections, stake, bookingCodeId = null) => {
   const totalOdds = calculateTotalOdds(finalSelections);
   const potentialWin = stake * (totalOdds - 1)
   const tax = potentialWin * 0.12
-  const potentialReturn = potentialWin - (tax + stake);
+  const potentialReturn = (potentialWin - tax) + stake;
   
   console.log('Calculated - Total Odds:', totalOdds, 'Potential Return:', potentialReturn);
 
