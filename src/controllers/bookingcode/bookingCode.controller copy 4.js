@@ -1,3 +1,5 @@
+// controllers/bookingcode/bookingCode.controller.js
+
 const bookingCodeService = require('../../services/bookingcode/bookingCode.service');
 const {
   ValidationError,
@@ -6,6 +8,8 @@ const {
 
 /**
  * Create a new booking code (PUBLIC)
+ * POST /api/booking-codes/create
+ * Body: { selections: [{ matchId, matchName, selectionType, selectionValue, odds, time, date, league, marketType }] }
  */
 const createBookingCode = asyncHandler(async (req, res) => {
   const { selections } = req.body;
@@ -34,6 +38,7 @@ const createBookingCode = asyncHandler(async (req, res) => {
 
 /**
  * Load booking code (get selections) - PUBLIC
+ * GET /api/booking-codes/:code/load
  */
 const loadBookingCode = asyncHandler(async (req, res) => {
   const { code } = req.params;
@@ -63,6 +68,7 @@ const loadBookingCode = asyncHandler(async (req, res) => {
 
 /**
  * Check booking code status - PUBLIC
+ * GET /api/booking-codes/:code/check
  */
 const checkBookingCode = asyncHandler(async (req, res) => {
   const { code } = req.params;
@@ -84,8 +90,10 @@ const checkBookingCode = asyncHandler(async (req, res) => {
 
 /**
  * Get user's booking codes (PUBLIC)
+ * GET /api/booking-codes/my
  */
 const getUserBookingCodes = asyncHandler(async (req, res) => {
+  // Inachukua userId kama ipo kwenye query au req.user, au inaleta zote/zilizopo
   const userId = req.user?.id || req.query.userId || null;
 
   const bookingCodes = await bookingCodeService.getUserBookingCodes(userId);
@@ -98,6 +106,7 @@ const getUserBookingCodes = asyncHandler(async (req, res) => {
 
 /**
  * Get all booking codes (PUBLIC)
+ * GET /api/booking-codes/admin/all
  */
 const getAllBookingCodes = asyncHandler(async (req, res) => {
   const { limit = 100, offset = 0, status } = req.query;
@@ -123,7 +132,8 @@ const getAllBookingCodes = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get booking code by ID (PUBLIC)
+ * Get booking code by ID (PUBLIC - authentication check removed)
+ * GET /api/booking-codes/:id
  */
 const getBookingCodeById = asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -144,8 +154,9 @@ const getBookingCodeById = asyncHandler(async (req, res) => {
 });
 
 /**
- * Update selection score (PUBLIC)
+ * Update selection score (PUBLIC - admin check removed)
  * PATCH /api/booking-codes/:id/score
+ * Body: { matchId, homeScore, awayScore, selectionType, marketType }
  */
 const updateSelectionScore = asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -159,6 +170,7 @@ const updateSelectionScore = asyncHandler(async (req, res) => {
   console.log('📥 selectionType:', selectionType);
   console.log('📥 marketType:', marketType);
 
+  // Validate required fields
   if (!matchId) {
     return res.status(400).json({
       success: false,
@@ -180,11 +192,10 @@ const updateSelectionScore = asyncHandler(async (req, res) => {
     });
   }
 
-  // Yaongezwa CORRECT_SCORE
-  if (!['HOME', 'DRAW', 'AWAY', 'OVER', 'UNDER', 'YES', 'NO', 'CORRECT_SCORE'].includes(selectionType)) {
+  if (!['HOME', 'DRAW', 'AWAY', 'OVER', 'UNDER', 'YES', 'NO'].includes(selectionType)) {
     return res.status(400).json({
       success: false,
-      message: 'Invalid selection type. Must be HOME, DRAW, AWAY, OVER, UNDER, YES, NO, or CORRECT_SCORE'
+      message: 'Invalid selection type. Must be HOME, DRAW, AWAY, OVER, UNDER, YES, or NO'
     });
   }
 
@@ -212,7 +223,8 @@ const updateSelectionScore = asyncHandler(async (req, res) => {
 });
 
 /**
- * Deactivate booking code
+ * Deactivate booking code (PUBLIC - authentication check removed)
+ * PATCH /api/booking-codes/:id/deactivate
  */
 const deactivateBookingCode = asyncHandler(async (req, res) => {
   const { id } = req.params;

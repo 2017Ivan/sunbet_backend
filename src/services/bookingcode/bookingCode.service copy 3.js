@@ -1,3 +1,5 @@
+// services/bookingcode/bookingCode.service.js
+
 const bookingCodeRepository = require('../../repositories/bookingcode/bookingCode.repository');
 const { ValidationError, NotFoundError } = require('../../utils/errors');
 
@@ -62,8 +64,7 @@ const createBookingCode = async (userId, selectionsData) => {
       throw new ValidationError(`Invalid odds for selection ${index + 1}`);
     }
 
-    // Yaongezwa CORRECT_SCORE
-    if (!['HOME', 'DRAW', 'AWAY', 'OVER', 'UNDER', 'YES', 'NO', 'CORRECT_SCORE'].includes(selection.selectionType)) {
+    if (!['HOME', 'DRAW', 'AWAY', 'OVER', 'UNDER', 'YES', 'NO'].includes(selection.selectionType)) {
       throw new ValidationError(`Invalid selection type for selection ${index + 1}`);
     }
   });
@@ -176,6 +177,12 @@ const getAllBookingCodes = async (options = {}) => {
 
 /**
  * Update selection score with all fields
+ * @param {string} bookingCodeId - Booking code ID
+ * @param {string} matchId - Match ID
+ * @param {number} homeScore - Home score
+ * @param {number} awayScore - Away score
+ * @param {string} selectionType - HOME, DRAW, AWAY
+ * @param {string} marketType - Market type (e.g., 1X2, Double Chance, BTTS, etc.)
  */
 const updateSelectionScore = async (bookingCodeId, matchId, homeScore, awayScore, selectionType, marketType) => {
   if (!bookingCodeId) throw new ValidationError('Booking code ID is required');
@@ -189,9 +196,7 @@ const updateSelectionScore = async (bookingCodeId, matchId, homeScore, awayScore
   if (!selectionType) {
     throw new ValidationError('Selection type is required');
   }
-  
-  // Yaongezwa CORRECT_SCORE
-  if (!['HOME', 'DRAW', 'AWAY', 'OVER', 'UNDER', 'YES', 'NO', 'CORRECT_SCORE'].includes(selectionType)) {
+  if (!['HOME', 'DRAW', 'AWAY', 'OVER', 'UNDER', 'YES', 'NO'].includes(selectionType)) {
     throw new ValidationError('Invalid selection type');
   }
   if (!marketType) {

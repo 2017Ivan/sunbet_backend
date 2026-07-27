@@ -81,57 +81,13 @@ const updateStatus = async (id, status) => {
 };
 
 /**
- * Determine result based on selection details, selection type, and scores
- */
-const determineResult = (selection, selectionType, homeScore, awayScore) => {
-  const type = selectionType || selection?.selectionType;
-  
-  // Chukua pick/selectionValue ya mtumiaji (e.g. "2-0", "0-2")
-  const rawPick = (selection?.selectionValue || selection?.pick || '').toString().trim();
-
-  switch (type) {
-    case 'CORRECT_SCORE': {
-      // Safisha string kuondoa spaces au hyphen, mfano: "2 - 0" -> "20"
-      const userPickClean = rawPick.replace(/[\s:-]+/g, '');
-      const matchScoreClean = `${homeScore}${awayScore}`;
-
-      if (!userPickClean) return 'PENDING';
-      return userPickClean === matchScoreClean ? 'WON' : 'LOST';
-    }
-
-    case 'HOME':
-      return homeScore > awayScore ? 'WON' : 'LOST';
-
-    case 'DRAW':
-      return homeScore === awayScore ? 'WON' : 'LOST';
-
-    case 'AWAY':
-      return awayScore > homeScore ? 'WON' : 'LOST';
-
-    case 'OVER': {
-      // Kama kuna threshold iliyowekwa kwenye pick (mfano "2.5"), isome. Default ni 2.5
-      const threshold = parseFloat(rawPick.replace(/[^0-9.]/g, '')) || 2.5;
-      return (homeScore + awayScore) > threshold ? 'WON' : 'LOST';
-    }
-
-    case 'UNDER': {
-      const threshold = parseFloat(rawPick.replace(/[^0-9.]/g, '')) || 2.5;
-      return (homeScore + awayScore) < threshold ? 'WON' : 'LOST';
-    }
-
-    case 'YES':
-      return (homeScore > 0 && awayScore > 0) ? 'WON' : 'LOST';
-
-    case 'NO':
-      return (homeScore === 0 || awayScore === 0) ? 'WON' : 'LOST';
-
-    default:
-      return 'PENDING';
-  }
-};
-
-/**
  * Update selection score inside booking code
+ * @param {string} bookingCodeId - Booking code ID
+ * @param {string} matchId - Match ID
+ * @param {number} homeScore - Home team score
+ * @param {number} awayScore - Away team score
+ * @param {string} selectionType - HOME, DRAW, AWAY
+ * @param {string} marketType - Market type (e.g., 1X2, Double Chance, BTTS, etc.)
  */
 const updateSelectionScore = async (bookingCodeId, matchId, homeScore, awayScore, selectionType, marketType) => {
   const bookingCode = await BookingCode.findByPk(bookingCodeId);
@@ -141,28 +97,53 @@ const updateSelectionScore = async (bookingCodeId, matchId, homeScore, awayScore
   
   // Find and update the specific selection
   const updatedSelections = selections.map(selection => {
-    // Tumia String conversion ili kuhakikisha Match IDs zinalingana hata kama moja ni number na nyingine ni string
-    if (String(selection.matchId) === String(matchId)) {
-      const updatedSel = {
+    if (selection.matchId === matchId) {
+      return {
         ...selection,
         score: { home: homeScore, away: awayScore },
         selectionType: selectionType,
-        marketType: marketType
+        marketType: marketType,
+        result: determineResult(selectionType, homeScore, awayScore)
       };
-
-      // Tumia updated selection kupata matokeo
-      updatedSel.result = determineResult(updatedSel, selectionType, homeScore, awayScore);
-      return updatedSel;
     }
     return selection;
   });
-
-  // Force Sequelize kutambua JSON array imebadilika
-  bookingCode.set('selections', updatedSelections);
-  bookingCode.changed('selections', true);
-
-  await bookingCode.save();
+  
+  // Check if any selection was updated
+  const isUpdated = updatedSelections.some((sel, index) => 
+    JSON.stringify(sel) !== JSON.stringify(selections[index])
+  );
+  
+  if (!isUpdated) {
+    return null;
+  }
+  
+  await bookingCode.update({ selections: updatedSelections });
   return bookingCode;
+};
+
+/**
+ * Determine result based on selection type and scores
+ */
+const determineResult = (selectionType, homeScore, awayScore) => {
+  switch (selectionType) {
+    case 'HOME':
+      return homeScore > awayScore ? 'WON' : 'LOST';
+    case 'DRAW':
+      return homeScore === awayScore ? 'WON' : 'LOST';
+    case 'AWAY':
+      return awayScore > homeScore ? 'WON' : 'LOST';
+    case 'OVER':
+      return (homeScore + awayScore) > 2.5 ? 'WON' : 'LOST';
+    case 'UNDER':
+      return (homeScore + awayScore) < 2.5 ? 'WON' : 'LOST';
+    case 'YES':
+      return (homeScore > 0 && awayScore > 0) ? 'WON' : 'LOST';
+    case 'NO':
+      return (homeScore === 0 || awayScore === 0) ? 'WON' : 'LOST';
+    default:
+      return 'PENDING';
+  }
 };
 
 /**
