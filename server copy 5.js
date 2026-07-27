@@ -1,3 +1,5 @@
+// server.js
+
 require('dotenv').config();
 
 const express = require('express');
@@ -31,20 +33,6 @@ const PORT = process.env.PORT || 5000;
    GLOBAL MIDDLEWARES
 ========================= */
 
-// Express Proxy Trust (Zingatia hii ukiwa kwenye VPS nyuma ya Nginx/Cloudflare)
-app.set('trust proxy', 1);
-
-app.use(requestLogger);
-
-// Helmet Configuration
-app.use(
-    helmet({
-        crossOriginResourcePolicy: { policy: "cross-origin" },
-        crossOriginEmbedderPolicy: false
-    })
-);
-
-// Dynamic CORS Configuration
 const allowedOrigins = [
     'http://localhost:5173',
     'http://localhost:5174',
@@ -53,23 +41,13 @@ const allowedOrigins = [
     'https://www.sunbeting.com'
 ];
 
+app.use(requestLogger);
+app.use(helmet());
 app.use(cors({
-    origin: (origin, callback) => {
-        // Allow requests with no origin (like Postman or server-to-server)
-        if (!origin) return callback(null, true);
-        
-        if (allowedOrigins.includes(origin) || origin.endsWith('.sunbeting.com')) {
-            return callback(null, true);
-        }
-        
-        console.error(`❌ CORS Blocked Origin: ${origin}`);
-        return callback(new Error('CORS Not Allowed'), false);
-    },
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'PUT', 'OPTIONS'],
-    credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+    origin: allowedOrigins,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'PUT'],
+    credentials: true
 }));
-
 app.use(express.json());
 
 /* =========================
