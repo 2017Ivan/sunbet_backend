@@ -136,11 +136,11 @@ const calculateTotalOdds = (selections) => {
  */
 const placeBet = async (userId, selections, stake, bookingCodeId = null) => {
   console.log('=== PLACE BET REQUEST ===');
-  console.log('UserId:', userId);
-  console.log('BookingCodeId:', bookingCodeId);
-  console.log('Stake:', stake);
-  console.log('Selections count:', selections?.length);
-  console.log('Selections:', JSON.stringify(selections, null, 2));
+  // console.log('UserId:', userId);
+  // console.log('BookingCodeId:', bookingCodeId);
+  // console.log('Stake:', stake);
+  // console.log('Selections count:', selections?.length);
+  // console.log('Selections:', JSON.stringify(selections, null, 2));
   
   // Validate inputs
   if (!userId) throw new ValidationError('User ID is required');

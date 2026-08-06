@@ -88,11 +88,11 @@ const placeBet = async (req, res) => {
     const userId = req.user.id;
     const { selections, stake, bookingCodeId } = req.body;
 
-    console.log('📥 Controller received:');
-    console.log('📥 userId:', userId);
-    console.log('📥 selections:', JSON.stringify(selections, null, 2));
-    console.log('📥 stake:', stake);
-    console.log('📥 bookingCodeId:', bookingCodeId);
+    // console.log('📥 Controller received:');
+    // console.log('📥 userId:', userId);
+    // console.log('📥 selections:', JSON.stringify(selections, null, 2));
+    // console.log('📥 stake:', stake);
+    // console.log('📥 bookingCodeId:', bookingCodeId);
 
     // Validate inputs
     if (!selections || !Array.isArray(selections) || selections.length === 0) {

@@ -76,7 +76,6 @@ const findAll = async (where = {}, options = {}) => {
         as: 'bookingCode',
         attributes: ['id', 'code']
       }
-      // Selection imeondolewa
     ]
   });
 };

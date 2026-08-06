@@ -11,7 +11,7 @@ router.use(authenticate);
 // ── USER ROUTES ────────────────────────────────────────────────────────────
 router.get('/', betController.getUserBets);
 router.get('/:id', betController.getBetById);
-router.post('/place', betController.placeBet);  // ← HII NDIO
+router.post('/place', betController.placeBet);  
 router.get('/booking-code/:bookingCodeId', betController.getBetsByBookingCode);
 router.get('/stats/my', betController.getUserBetStats);
 
