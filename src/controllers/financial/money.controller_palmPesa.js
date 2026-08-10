@@ -6,7 +6,7 @@ const crypto = require('crypto');
 
 // ============ PALMPESA CONFIGURATION ============
 const PALMPESA = {
-  apiToken: 'frc7sTSxod2FFN8gvtIA3ilXA9EFIkvMVpg96tyrMAEHfKfV2pmpMOLjQksW',
+  apiToken: 'C5lzK93Ug937QqZwaOLRg2B0cH7nVMmowymtPn46SRchBzbYp7HyDABlifIR',
   userId: '1083',
   baseUrl: 'https://palmpesa.drmlelwa.co.tz',
 };
