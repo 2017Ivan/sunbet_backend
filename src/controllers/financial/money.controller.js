@@ -429,7 +429,7 @@ const adminWithdraw = async (req, res) => {
     const { amount, phone_number, transaction_id } = req.body;
 
     const user = await userRepository.findById(userId);
-    if (!user || user.role !== 'admin') {
+    if (!user || user.role !== 'ADMIN') {
       return res.status(403).json({
         success: false,
         message: 'Admin access required'
