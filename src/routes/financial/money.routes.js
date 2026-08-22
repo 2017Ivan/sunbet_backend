@@ -9,13 +9,13 @@ router.post('/snippe-webhook', moneyController.snippeWebhook);
 // ============ PROTECTED ROUTES ============
 
 // Deposit (Snippe Mobile Money)
-router.post('/deposit', authenticate, moneyController.deposit);
+router.post('/deposit/snipe', authenticate, moneyController.deposit);
 
 // Check payment status
 router.get('/payment/status/:transactionId', authenticate, moneyController.checkPaymentStatus);
 
 // Admin withdrawal via Snippe
-router.post('/admin/withdraw', authenticate, moneyController.adminWithdraw);
+router.post('/admin/withdraw', authenticate, authorize(['ADMIN']),moneyController.adminWithdraw);
 
 // Withdraw & Balance (original)
 router.post('/withdraw', authenticate, moneyController.withdraw);
