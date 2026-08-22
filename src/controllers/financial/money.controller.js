@@ -1,4 +1,4 @@
-// controllers/financial/snippe.controller.js
+// controllers/financial/money.controller.js
 const userService = require('../../services/auth.service');
 const userRepository = require('../../repositories/user.repository');
 const axios = require('axios');
@@ -6,11 +6,11 @@ const crypto = require('crypto');
 
 // ============ SNIPPE CONFIGURATION ============
 const SNIPPE = {
-  apiKey: 'snp_b0c2ed1711e20a8951538a7814fb9eb15e59a73c0c0b45cfdc0f0ca4eecef498', // actual Snippe API key
+  apiKey: 'snp_b0c2ed1711e20a8951538a7814fb9eb15e59a73c0c0b45cfdc0f0ca4eecef498',
   baseUrl: 'https://api.snippe.sh/v1',
 };
 
-// Store pending transactions (in memory - use Redis/DB in production)
+// Store pending transactions
 if (!global.snippeTransactions) {
   global.snippeTransactions = new Map();
 }
@@ -21,33 +21,28 @@ function generateTransactionId() {
 }
 
 function formatPhoneForSnippe(phone) {
-  // Snippe expects phone in format: 255XXXXXXXXX (no leading +)
   let cleaned = phone.replace(/\D/g, '');
-  
-  // If starts with 0, remove it and add 255
   if (cleaned.startsWith('0')) {
     cleaned = '255' + cleaned.substring(1);
   }
-  
-  // If starts with +255, remove the +
   if (cleaned.startsWith('255') && cleaned.length === 12) {
     return cleaned;
   }
-  
   return cleaned;
 }
 
-// ============ SNIPPE DEPOSIT (Mobile Money) ============
+// =============================================
+// ============ DEPOSIT (Snippe Mobile Money) ============
+// =============================================
 
 /**
- * POST /api/deposit/snippe - Initiate Snippe mobile money deposit
+ * POST /api/deposit - Initiate Snippe mobile money deposit
  */
-const depositViaSnippe = async (req, res) => {
+const deposit = async (req, res) => {
   try {
     const userId = req.user.id;
     const { amount, phone_number } = req.body;
 
-    // Validate amount (minimum 500 TZS)
     if (!amount || amount < 500) {
       return res.status(400).json({
         success: false,
@@ -62,7 +57,6 @@ const depositViaSnippe = async (req, res) => {
       });
     }
 
-    // Check if user exists
     const user = await userRepository.findById(userId);
     if (!user) {
       return res.status(404).json({
@@ -71,11 +65,9 @@ const depositViaSnippe = async (req, res) => {
       });
     }
 
-    // Format phone for Snippe
     const snippePhone = formatPhoneForSnippe(phone_number);
     const transactionId = generateTransactionId();
 
-    // Build Snippe request
     const requestData = {
       payment_type: "mobile",
       details: {
@@ -98,7 +90,6 @@ const depositViaSnippe = async (req, res) => {
 
     console.log('📤 Snippe Deposit Request:', JSON.stringify(requestData, null, 2));
 
-    // Call Snippe API
     const response = await axios.post(
       `${SNIPPE.baseUrl}/payments`,
       requestData,
@@ -107,7 +98,7 @@ const depositViaSnippe = async (req, res) => {
           'Authorization': `Bearer ${SNIPPE.apiKey}`,
           'Content-Type': 'application/json',
           'Accept': 'application/json',
-          'Idempotency-Key': transactionId.substring(0, 30) // Max 30 chars
+          'Idempotency-Key': transactionId.substring(0, 30)
         },
         timeout: 30000
       }
@@ -119,7 +110,6 @@ const depositViaSnippe = async (req, res) => {
     if (result.status === 'success' && result.data) {
       const paymentData = result.data;
       
-      // Store transaction
       global.snippeTransactions.set(transactionId, {
         user_id: userId,
         amount: Number(amount),
@@ -167,29 +157,94 @@ const depositViaSnippe = async (req, res) => {
   }
 };
 
-// ============ SNIPPE WEBHOOK ============
+// =============================================
+// ============ WITHDRAW ============
+// =============================================
 
-/**
- * POST /api/snippe-webhook - Snippe webhook handler
- */
+const withdraw = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { amount } = req.body;
+
+    if (!amount || amount < 1000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Minimum withdrawal is 1000 TZS'
+      });
+    }
+
+    const result = await userService.withdraw(userId, amount);
+
+    res.status(200).json({
+      success: true,
+      message: `TZS ${amount.toLocaleString()} withdrawn successfully. Balance: TZS ${result.new_balance.toLocaleString()}`,
+      data: {
+        amount: result.withdrawn_amount,
+        previous_balance: result.previous_balance,
+        new_balance: result.new_balance
+      }
+    });
+
+  } catch (error) {
+    console.error('Withdraw error:', error);
+
+    if (error.message === 'Insufficient balance') {
+      return res.status(400).json({
+        success: false,
+        message: 'Insufficient balance'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Withdrawal failed'
+    });
+  }
+};
+
+// =============================================
+// ============ BALANCE ============
+// =============================================
+
+const balance = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const result = await userService.getBalance(userId);
+
+    res.status(200).json({
+      success: true,
+      message: 'Balance retrieved successfully',
+      data: {
+        balance: result.balance
+      }
+    });
+
+  } catch (error) {
+    console.error('Balance error:', error);
+    res.status(400).json({
+      success: false,
+      message: error.message || 'Failed to get balance'
+    });
+  }
+};
+
+// =============================================
+// ============ SNIPPE WEBHOOK ============
+// =============================================
+
 const snippeWebhook = async (req, res) => {
   console.log('🔥 Snippe Webhook received:', JSON.stringify(req.body, null, 2));
 
   try {
-    // TUNAONDOA KABISA SIGNATURE VERIFICATION
-    // Sisi tunachukua tu request body na kuiprocess moja kwa moja
-    
     const webhookData = req.body;
     const eventType = webhookData.type || webhookData.event;
     const eventData = webhookData.data || webhookData;
 
-    // Handle different event types
     if (eventType === 'payment.completed' || 
         (eventData.status && eventData.status === 'completed')) {
       
       const snippeReference = eventData.reference;
       
-      // Find transaction by snippe_reference
       let foundTransaction = null;
       let foundKey = null;
 
@@ -206,22 +261,18 @@ const snippeWebhook = async (req, res) => {
         return res.status(200).json({ message: 'Transaction not found' });
       }
 
-      // Prevent duplicate processing
       if (foundTransaction.status === 'completed') {
         console.log(`Transaction ${foundKey} already processed`);
         return res.status(200).json({ message: 'Already processed' });
       }
 
-      // Extract amount from webhook (amount is object in webhook)
       let amount = foundTransaction.amount;
       if (eventData.amount && eventData.amount.value) {
         amount = eventData.amount.value;
       }
       
-      // Update user balance
       const depositResult = await userService.deposit(foundTransaction.user_id, amount);
 
-      // Update transaction
       foundTransaction.status = 'completed';
       foundTransaction.balance_added = true;
       foundTransaction.new_balance = depositResult.new_balance;
@@ -266,7 +317,6 @@ const snippeWebhook = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Webhook processing error:', error);
-    // Still return 200 to prevent Snippe from retrying
     res.status(200).json({
       message: 'Webhook received with errors',
       status: 'error'
@@ -274,12 +324,11 @@ const snippeWebhook = async (req, res) => {
   }
 };
 
-// ============ CHECK SNIPPE PAYMENT STATUS ============
+// =============================================
+// ============ CHECK PAYMENT STATUS ============
+// =============================================
 
-/**
- * GET /api/payment/status/snippe/:transactionId - Check Snippe payment status
- */
-const checkSnippeStatus = async (req, res) => {
+const checkPaymentStatus = async (req, res) => {
   try {
     const { transactionId } = req.params;
     const userId = req.user.id;
@@ -293,7 +342,6 @@ const checkSnippeStatus = async (req, res) => {
       });
     }
 
-    // Check if user owns this transaction
     if (transaction.user_id !== userId) {
       return res.status(403).json({
         success: false,
@@ -301,7 +349,6 @@ const checkSnippeStatus = async (req, res) => {
       });
     }
 
-    // If status is still pending, check with Snippe API directly
     if (transaction.status === 'pending' && transaction.snippe_reference) {
       try {
         const response = await axios.get(
@@ -320,7 +367,6 @@ const checkSnippeStatus = async (req, res) => {
           const currentStatus = paymentData.status;
 
           if (currentStatus === 'completed' && transaction.status !== 'completed') {
-            // Payment is completed, update balance
             const depositResult = await userService.deposit(
               transaction.user_id, 
               transaction.amount
@@ -337,7 +383,6 @@ const checkSnippeStatus = async (req, res) => {
             transaction.updated_at = new Date().toISOString();
             global.snippeTransactions.set(transactionId, transaction);
           } else {
-            // Still pending, update any changes
             transaction.status = currentStatus;
             transaction.updated_at = new Date().toISOString();
             global.snippeTransactions.set(transactionId, transaction);
@@ -345,7 +390,6 @@ const checkSnippeStatus = async (req, res) => {
         }
       } catch (apiError) {
         console.error('Error checking Snippe status:', apiError.message);
-        // Continue with local status
       }
     }
 
@@ -375,18 +419,15 @@ const checkSnippeStatus = async (req, res) => {
   }
 };
 
-// ============ ADMIN WITHDRAW (via Snippe Disbursement) ============
+// =============================================
+// ============ ADMIN WITHDRAW ============
+// =============================================
 
-/**
- * POST /api/admin/withdraw - Admin initiated withdrawal via Snippe
- * This sends money from your Snippe account to a customer's mobile money
- */
-const adminWithdrawViaSnippe = async (req, res) => {
+const adminWithdraw = async (req, res) => {
   try {
     const userId = req.user.id;
     const { amount, phone_number, transaction_id } = req.body;
 
-    // Check admin permissions
     const user = await userRepository.findById(userId);
     if (!user || user.role !== 'admin') {
       return res.status(403).json({
@@ -395,7 +436,6 @@ const adminWithdrawViaSnippe = async (req, res) => {
       });
     }
 
-    // Validate amount
     if (!amount || amount < 1000) {
       return res.status(400).json({
         success: false,
@@ -410,11 +450,9 @@ const adminWithdrawViaSnippe = async (req, res) => {
       });
     }
 
-    // Format phone for Snippe
     const snippePhone = formatPhoneForSnippe(phone_number);
     const withdrawalId = transaction_id || generateTransactionId();
 
-    // Build Snippe disbursement request
     const requestData = {
       amount: Number(amount),
       currency: "TZS",
@@ -433,7 +471,6 @@ const adminWithdrawViaSnippe = async (req, res) => {
 
     console.log('📤 Snippe Disbursement Request:', JSON.stringify(requestData, null, 2));
 
-    // Call Snippe Disbursement API
     const response = await axios.post(
       `${SNIPPE.baseUrl}/disbursements`,
       requestData,
@@ -451,9 +488,7 @@ const adminWithdrawViaSnippe = async (req, res) => {
     const result = response.data;
     console.log('✅ Snippe Disbursement Response:', JSON.stringify(result, null, 2));
 
-    // Store withdrawal transaction (optional)
     if (result.status === 'success') {
-      // Update user balance (deduct amount)
       const withdrawResult = await userService.withdraw(userId, amount);
       
       return res.status(200).json({
@@ -495,18 +530,24 @@ const adminWithdrawViaSnippe = async (req, res) => {
   }
 };
 
+// =============================================
 // ============ EXPORT ============
+// =============================================
+
 module.exports = {
-  // Snippe deposit
-  depositViaSnippe,
+  // Deposit (Snippe)
+  deposit,
+  
+  // Withdraw & Balance
+  withdraw,
+  balance,
+  
+  // Snippe Webhook
   snippeWebhook,
-  checkSnippeStatus,
+  
+  // Check payment status
+  checkPaymentStatus,
   
   // Admin withdrawal via Snippe
-  adminWithdrawViaSnippe,
-  
-  // Keep these from original (hizi zitakuwa imported from money.controller)
-  depositMoney,
-  withdrawMoney,
-  checkBalance
+  adminWithdraw
 };
