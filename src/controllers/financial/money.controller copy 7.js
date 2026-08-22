@@ -428,8 +428,6 @@ const adminWithdraw = async (req, res) => {
     const userId = req.user.id;
     const { amount, phone_number, transaction_id } = req.body;
 
-    console.log('🔍 AdminWithdraw called:', { userId, amount, phone_number });
-
     const user = await userRepository.findById(userId);
     if (!user || user.role !== 'ADMIN') {
       return res.status(403).json({
@@ -455,26 +453,26 @@ const adminWithdraw = async (req, res) => {
     const snippePhone = formatPhoneForSnippe(phone_number);
     const withdrawalId = transaction_id || generateTransactionId();
 
-    // REKEBISHA REQUEST DATA KUFUATA DOCS
     const requestData = {
       amount: Number(amount),
-      channel: "mobile",
-      recipient_phone: snippePhone,
-      recipient_name: user.first_name + ' ' + user.last_name || 'Customer',
-      narration: `Admin withdrawal for ${user.email}`,
+      currency: "TZS",
+      phone_number: snippePhone,
+      customer: {
+        name: user.first_name + ' ' + user.last_name || 'Customer',
+        email: user.email || 'admin@example.com'
+      },
       webhook_url: `${process.env.BASE_URL || 'https://sunbeting.com'}/api/snippe-webhook`,
+      reference: withdrawalId,
       metadata: {
         admin_id: userId,
-        withdrawal_type: 'admin_withdrawal',
-        transaction_id: withdrawalId
+        withdrawal_type: 'admin_withdrawal'
       }
     };
 
-    console.log('📤 Snippe Payout Request:', JSON.stringify(requestData, null, 2));
+    console.log('📤 Snippe Disbursement Request:', JSON.stringify(requestData, null, 2));
 
-    // TUMIA ENDPOINT SAHIHI - /payouts/send
     const response = await axios.post(
-      `${SNIPPE.baseUrl}/payouts/send`,
+      `${SNIPPE.baseUrl}/disbursements`,
       requestData,
       {
         headers: {
@@ -488,31 +486,25 @@ const adminWithdraw = async (req, res) => {
     );
 
     const result = response.data;
-    console.log('✅ Snippe Payout Response:', JSON.stringify(result, null, 2));
+    console.log('✅ Snippe Disbursement Response:', JSON.stringify(result, null, 2));
 
-    if (result.status === 'success' && result.data) {
-      const payoutData = result.data;
-      
-      // Update user balance (deduct amount)
+    if (result.status === 'success') {
       const withdrawResult = await userService.withdraw(userId, amount);
       
       return res.status(200).json({
         success: true,
-        message: `Withdrawal of TZS ${amount.toLocaleString()} initiated successfully via Snippe`,
+        message: `Withdrawal of TZS ${amount.toLocaleString()} initiated successfully`,
         data: {
           transaction_id: withdrawalId,
-          payout_reference: payoutData.reference,
           amount: amount,
           phone: snippePhone,
-          status: payoutData.status || 'pending',
-          fees: payoutData.fees,
-          total: payoutData.total,
+          status: 'pending',
           previous_balance: withdrawResult.previous_balance,
           new_balance: withdrawResult.new_balance
         }
       });
     } else {
-      throw new Error(result.message || 'Failed to initiate payout');
+      throw new Error(result.message || 'Failed to initiate withdrawal');
     }
 
   } catch (error) {
