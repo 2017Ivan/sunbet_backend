@@ -6,8 +6,9 @@ const crypto = require('crypto');
 
 // ============ SNIPPE CONFIGURATION ============
 const SNIPPE = {
-  apiKey: 'snp_b0c2ed1711e20a8951538a7814fb9eb15e59a73c0c0b45cfdc0f0ca4eecef498', // actual Snippe API key
+  apiKey: 'snp_your_api_key_here', // Replace with your actual Snippe API key
   baseUrl: 'https://api.snippe.sh/v1',
+  webhookSecret: 'whsec_your_webhook_secret_here', // Replace with your webhook secret
 };
 
 // Store pending transactions (in memory - use Redis/DB in production)
@@ -176,15 +177,43 @@ const snippeWebhook = async (req, res) => {
   console.log('🔥 Snippe Webhook received:', JSON.stringify(req.body, null, 2));
 
   try {
-    // TUNAONDOA KABISA SIGNATURE VERIFICATION
-    // Sisi tunachukua tu request body na kuiprocess moja kwa moja
+    // Verify webhook signature (recommended for production)
+    const signature = req.headers['x-webhook-signature'];
+    const timestamp = req.headers['x-webhook-timestamp'];
     
+    if (SNIPPE.webhookSecret && signature && timestamp) {
+      // Verify signature
+      const rawBody = JSON.stringify(req.body);
+      const message = `${timestamp}.${rawBody}`;
+      const expectedSignature = crypto
+        .createHmac('sha256', SNIPPE.webhookSecret)
+        .update(message)
+        .digest('hex');
+      
+      // Constant-time comparison
+      if (!crypto.timingSafeEqual(
+        Buffer.from(signature),
+        Buffer.from(expectedSignature)
+      )) {
+        console.error('❌ Invalid webhook signature');
+        return res.status(400).json({ error: 'Invalid signature' });
+      }
+      
+      // Check timestamp freshness (reject if > 5 minutes old)
+      const eventTime = parseInt(timestamp, 10);
+      const currentTime = Math.floor(Date.now() / 1000);
+      if (currentTime - eventTime > 300) {
+        console.error('❌ Webhook timestamp too old');
+        return res.status(400).json({ error: 'Timestamp too old' });
+      }
+    }
+
     const webhookData = req.body;
     const eventType = webhookData.type || webhookData.event;
     const eventData = webhookData.data || webhookData;
 
     // Handle different event types
-    if (eventType === 'payment.completed' || 
+    if (eventType === 'payment.completed' || eventType === 'payment.completed' || 
         (eventData.status && eventData.status === 'completed')) {
       
       const snippeReference = eventData.reference;
@@ -242,7 +271,7 @@ const snippeWebhook = async (req, res) => {
       console.log(`✅ Balance updated: +${amount} TZS for user ${foundTransaction.user_id}`);
       console.log(`💰 New balance: ${depositResult.new_balance}`);
 
-    } else if (eventType === 'payment.failed' || 
+    } else if (eventType === 'payment.failed' || eventType === 'payment.failed' ||
                (eventData.status && eventData.status === 'failed')) {
       
       const snippeReference = eventData.reference;
@@ -435,7 +464,7 @@ const adminWithdrawViaSnippe = async (req, res) => {
 
     // Call Snippe Disbursement API
     const response = await axios.post(
-      `${SNIPPE.baseUrl}/disbursements`,
+      `${SNIPPE.baseUrl}/disbursements`, // Assuming endpoint from docs
       requestData,
       {
         headers: {
@@ -505,7 +534,7 @@ module.exports = {
   // Admin withdrawal via Snippe
   adminWithdrawViaSnippe,
   
-  // Keep these from original (hizi zitakuwa imported from money.controller)
+  // Keep these from original
   depositMoney,
   withdrawMoney,
   checkBalance
