@@ -240,11 +240,10 @@ const snippeWebhook = async (req, res) => {
     const eventType = webhookData.type || webhookData.event;
     const eventData = webhookData.data || webhookData;
 
-    if (eventType === 'payment.completed' || 
-        (eventData.status && eventData.status === 'completed')) {
+    // Check status if completed
+    if (eventType === 'payment.completed' || eventData.status === 'completed' || eventData.status === 'success') {
       
       const snippeReference = eventData.reference;
-      
       let foundTransaction = null;
       let foundKey = null;
 
@@ -257,70 +256,54 @@ const snippeWebhook = async (req, res) => {
       }
 
       if (!foundTransaction) {
-        console.log(`Transaction not found for snippe_reference: ${snippeReference}`);
         return res.status(200).json({ message: 'Transaction not found' });
       }
 
       if (foundTransaction.status === 'completed') {
-        console.log(`Transaction ${foundKey} already processed`);
         return res.status(200).json({ message: 'Already processed' });
       }
 
+      // 🔴 FIX CHIEF: Parse amount value correctly from Snippe object format
       let amount = foundTransaction.amount;
-      if (eventData.amount && eventData.amount.value) {
-        amount = eventData.amount.value;
+      if (eventData.amount) {
+        if (typeof eventData.amount === 'object' && eventData.amount.value) {
+          amount = Number(eventData.amount.value);
+        } else if (typeof eventData.amount === 'number' || typeof eventData.amount === 'string') {
+          amount = Number(eventData.amount);
+        }
       }
-      
+
+      // Update balance in database
       const depositResult = await userService.deposit(foundTransaction.user_id, amount);
 
+      // Update in-memory status
       foundTransaction.status = 'completed';
       foundTransaction.balance_added = true;
       foundTransaction.new_balance = depositResult.new_balance;
       foundTransaction.completed_at = new Date().toISOString();
-      
-      if (eventData.settlement) {
-        foundTransaction.fees = eventData.settlement.fees;
-        foundTransaction.gross = eventData.settlement.gross;
-        foundTransaction.net = eventData.settlement.net;
-      }
-      
-      if (eventData.channel) {
-        foundTransaction.channel = eventData.channel;
-      }
 
       global.snippeTransactions.set(foundKey, foundTransaction);
 
-      console.log(`✅ Balance updated: +${amount} TZS for user ${foundTransaction.user_id}`);
-      console.log(`💰 New balance: ${depositResult.new_balance}`);
-
-    } else if (eventType === 'payment.failed' || 
-               (eventData.status && eventData.status === 'failed')) {
-      
+      console.log(`✅ Success: Salio limeongezeka +${amount} TZS kwa user ${foundTransaction.user_id}`);
+    } 
+    else if (eventType === 'payment.failed' || eventData.status === 'failed') {
       const snippeReference = eventData.reference;
-      
       for (const [key, value] of global.snippeTransactions.entries()) {
         if (value.snippe_reference === snippeReference) {
           value.status = 'failed';
-          value.failure_reason = eventData.failure_reason || 'Payment failed';
-          value.updated_at = new Date().toISOString();
           global.snippeTransactions.set(key, value);
-          console.log(`❌ Payment ${key} failed: ${value.failure_reason}`);
           break;
         }
       }
     }
 
-    res.status(200).json({
-      message: 'Webhook received',
-      status: 'success'
-    });
+    // Always reply fast to Snippe
+    return res.status(200).json({ status: 'success', message: 'Webhook processed' });
 
   } catch (error) {
     console.error('❌ Webhook processing error:', error);
-    res.status(200).json({
-      message: 'Webhook received with errors',
-      status: 'error'
-    });
+    // Return 200 so Snippe doesn't retry endlessly on code errors
+    return res.status(200).json({ status: 'error', message: error.message });
   }
 };
 
@@ -336,19 +319,14 @@ const checkPaymentStatus = async (req, res) => {
     const transaction = global.snippeTransactions.get(transactionId);
 
     if (!transaction) {
-      return res.status(404).json({
-        success: false,
-        message: 'Transaction not found'
-      });
+      return res.status(404).json({ success: false, message: 'Transaction not found' });
     }
 
     if (transaction.user_id !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Unauthorized'
-      });
+      return res.status(403).json({ success: false, message: 'Unauthorized' });
     }
 
+    // Direct check with Snippe API if status is still pending
     if (transaction.status === 'pending' && transaction.snippe_reference) {
       try {
         const response = await axios.get(
@@ -362,60 +340,49 @@ const checkPaymentStatus = async (req, res) => {
           }
         );
 
-        if (response.data && response.data.status === 'success') {
-          const paymentData = response.data.data;
+        if (response.data) {
+          const paymentData = response.data.data || response.data;
           const currentStatus = paymentData.status;
 
-          if (currentStatus === 'completed' && transaction.status !== 'completed') {
+          // If Snippe confirmed payment completed
+          if ((currentStatus === 'completed' || currentStatus === 'success') && transaction.status !== 'completed') {
+            
             const depositResult = await userService.deposit(
               transaction.user_id, 
-              transaction.amount
+              Number(transaction.amount)
             );
             
             transaction.status = 'completed';
             transaction.balance_added = true;
             transaction.new_balance = depositResult.new_balance;
             transaction.completed_at = paymentData.completed_at || new Date().toISOString();
-            global.snippeTransactions.set(transactionId, transaction);
             
+            global.snippeTransactions.set(transactionId, transaction);
           } else if (currentStatus === 'failed' || currentStatus === 'expired') {
             transaction.status = currentStatus;
-            transaction.updated_at = new Date().toISOString();
-            global.snippeTransactions.set(transactionId, transaction);
-          } else {
-            transaction.status = currentStatus;
-            transaction.updated_at = new Date().toISOString();
             global.snippeTransactions.set(transactionId, transaction);
           }
         }
       } catch (apiError) {
-        console.error('Error checking Snippe status:', apiError.message);
+        console.error('Error polling Snippe status:', apiError.message);
       }
     }
 
-    res.status(200).json({
+    // Standard Response for React/Vue Frontend to stop loading spinner
+    return res.status(200).json({
       success: true,
       data: {
         transaction_id: transactionId,
         amount: transaction.amount,
         phone: transaction.phone,
-        status: transaction.status,
-        snippe_reference: transaction.snippe_reference,
-        created_at: transaction.created_at,
-        updated_at: transaction.updated_at,
-        completed_at: transaction.completed_at || null,
-        new_balance: transaction.new_balance || null,
-        fees: transaction.fees || null,
-        channel: transaction.channel || null
+        status: transaction.status, // Frontend should check if status === 'completed' to stop loading
+        new_balance: transaction.new_balance || null
       }
     });
 
   } catch (error) {
     console.error('Status check error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to check payment status'
-    });
+    return res.status(500).json({ success: false, message: 'Failed to check status' });
   }
 };
 
