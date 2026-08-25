@@ -452,10 +452,10 @@ const adminWithdraw = async (req, res) => {
       });
     }
 
-    if (!amount || amount < 1000) {
+    if (!amount || amount < 7000) {
       return res.status(400).json({
         success: false,
-        message: 'Minimum withdrawal is 1000 TZS'
+        message: 'Minimum withdrawal is 7000 TZS'
       });
     }
 
