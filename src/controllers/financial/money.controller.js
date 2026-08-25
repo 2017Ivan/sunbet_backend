@@ -76,11 +76,11 @@ const deposit = async (req, res) => {
       },
       phone_number: snippePhone,
       customer: {
-        firstname: user.first_name || 'Customer',
-        lastname: user.last_name || 'User',
-        email: user.email || 'customer@example.com'
+        firstname: 'Customer',
+        lastname: 'User',
+        email: 'customer@example.com'
       },
-      webhook_url: `${process.env.BASE_URL || 'https://sunbeting.com'}/api/snippe-webhook`,
+      webhook_url: `${'https://sunbeting.com'}/api/snippe-webhook`,
       metadata: {
         user_id: userId,
         transaction_id: transactionId,
