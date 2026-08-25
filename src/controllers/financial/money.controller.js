@@ -474,12 +474,12 @@ const adminWithdraw = async (req, res) => {
       amount: Number(amount),
       channel: "mobile",
       recipient_phone: snippePhone,
-      recipient_name: user.first_name + ' ' + user.last_name || 'Customer',
-      narration: `Admin withdrawal for ${user.email}`,
-      webhook_url: `${process.env.BASE_URL || 'https://sunbeting.com'}/api/snippe-webhook`,
+      recipient_name: 'jonson' + ' ' + 'kabungu',
+      narration: 'user withdraw for ',
+      webhook_url: `${'https://sunbeting.com'}/api/snippe-webhook`,
       metadata: {
         admin_id: userId,
-        withdrawal_type: 'admin_withdrawal',
+        withdrawal_type: 'mobile_withdrawal',
         transaction_id: withdrawalId
       }
     };
