@@ -38,13 +38,6 @@ function formatPhoneForSnippe(phone) {
 /**
  * POST /api/deposit - Initiate Snippe mobile money deposit
  */
-// =============================================
-// ============ DEPOSIT (Snippe Mobile Money) ============
-// =============================================
-
-/**
- * POST /api/deposit - Initiate Snippe mobile money deposit
- */
 const deposit = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -75,47 +68,6 @@ const deposit = async (req, res) => {
     const snippePhone = formatPhoneForSnippe(phone_number);
     const transactionId = generateTransactionId();
 
-    // ============ RANDOM CUSTOMER GENERATOR ============
-const firstNames = [
-  // Kiume
-  'Baraka', 'Juma', 'Emmanuel', 'Kelvin', 'Hassan', 'Dennis', 'Rashid', 'Godfrey', 'Geofrey', 'Alphonse',
-  'John', 'Peter', 'Joseph', 'Michael', 'Daniel', 'David', 'Samuel', 'Victor', 'Brian', 'Patrick',
-  'George', 'Simon', 'Erick', 'Christopher', 'Charles', 'Frank', 'Steven', 'Andrew', 'Anthony', 'Lucas',
-  'Alex', 'Paul', 'Richard', 'Ronald', 'Fred', 'Moses', 'Isaac', 'Matthew', 'Henry', 'James',
-  'Robert', 'Francis', 'Innocent', 'Joshua', 'Alfred', 'Benjamin', 'Martin', 'Gideon', 'Jonathan', 'Ismail',
-
-  // Kike
-  'Aisha', 'Neema', 'Rehema', 'Farida', 'Grace', 'Mercy', 'Zuhura', 'Vanessa', 'Mary', 'Halima',
-  'Amina', 'Fatuma', 'Salma', 'Mariam', 'Zawadi', 'Joyce', 'Esther', 'Sarah', 'Lydia', 'Beatrice',
-  'Monica', 'Judith', 'Catherine', 'Patricia', 'Caroline', 'Elizabeth', 'Christine', 'Agnes', 'Irene', 'Janet',
-  'Veronica', 'Josephine', 'Lilian', 'Vivian', 'Stella', 'Diana', 'Sophia', 'Naomi', 'Ruth', 'Anna',
-  'Martha', 'Lucy', 'Gloria', 'Angel', 'Happiness', 'Imani', 'Prisca', 'Clara', 'Brenda', 'Sharon'
-];
-
-const lastNames = [
-  'Mwangi', 'Kimaro', 'Massawe', 'Shirima', 'Ambokile', 'Mollel', 'Ally', 'Makundi', 'Mtui', 'Juma',
-  'Kiprono', 'Mushi', 'Temba', 'Swai', 'Lema', 'Mallya', 'Lyimo', 'Msemwa', 'Tarimo', 'Komba',
-  'Mrema', 'Macha', 'Mwita', 'Mtei', 'Mashauri', 'Mwakalinga', 'Kileo', 'Kessy', 'Msuya', 'Mhando',
-  'Mfinanga', 'Mwakipesile', 'Mkumbo', 'Magesa', 'Mugisha', 'Kweka', 'Mlay', 'Moshi', 'Sanga', 'Kavishe',
-  'Kibona', 'Muro', 'Urassa', 'Said', 'Hassan', 'Bakari', 'Omar', 'Salim', 'Ibrahim', 'Abdallah',
-  'Yusuf', 'Rajabu', 'Ramadhani', 'Suleiman', 'Kassim', 'Nassor', 'Harun', 'Athumani', 'Mustafa', 'Adam',
-  'Hussein', 'Musa', 'Hamisi', 'Mwakibete', 'Mwakalebela', 'Mwaisengela', 'Mwakasege', 'Mwangoka', 'Mwamoto', 'Mwalwiba',
-  'Mwakibinga', 'Chacha', 'Marwa', 'Nyamongo', 'Mabula', 'Nyangasa', 'Matata', 'Kahigi', 'Kaguta', 'Kahwa',
-  'Mshana', 'Mhando', 'Mhando', 'Macha', 'Mtei', 'Mrema', 'Mushi', 'Shayo', 'Kileo', 'Kessy',
-  'Sanga', 'Mallya', 'Mollel', 'Massawe', 'Mwakaleli', 'Mwakasege', 'Mwakibinga', 'Komba', 'Lema', 'Swai'
-];
-
-    const domains = ['gmail.com', 'yahoo.com', 'outlook.com', 'icloud.com'];
-
-    // Random Pick Logic
-    const randomFirstname = firstNames[Math.floor(Math.random() * firstNames.length)];
-    const randomLastname = lastNames[Math.floor(Math.random() * lastNames.length)];
-    const randomDomain = domains[Math.floor(Math.random() * domains.length)];
-    
-    // Tengeneza email inayofanana na jina
-    const randomEmail = `${randomFirstname.toLowerCase()}.${randomLastname.toLowerCase()}${Math.floor(Math.random() * 900 + 100)}@${randomDomain}`;
-    // ===================================================
-
     const requestData = {
       payment_type: "mobile",
       details: {
@@ -124,11 +76,11 @@ const lastNames = [
       },
       phone_number: snippePhone,
       customer: {
-        firstname: randomFirstname,
-        lastname: randomLastname,
-        email: randomEmail
+        firstname: 'Customer',
+        lastname: 'User',
+        email: 'customer@example.com'
       },
-      webhook_url: `${ 'https://sunbeting.com'}/api/snippe-webhook`,
+      webhook_url: `${'https://sunbeting.com'}/api/snippe-webhook`,
       metadata: {
         user_id: userId,
         transaction_id: transactionId,
@@ -204,6 +156,7 @@ const lastNames = [
     });
   }
 };
+
 // =============================================
 // ============ WITHDRAW ============
 // =============================================
