@@ -1,40 +1,42 @@
+// server.js 
+
 require('dotenv').config();
 
 const express = require('express');
+const http = require('http'); 
+const { Server } = require('socket.io'); 
 const helmet = require('helmet');
 const cors = require('cors');
+const { startMatchCronJob, processMatchesLifecycle } = require('./src/cronJobs/match/matchEngine.cron');
 
-const {
-    requestLogger,
-    errorMiddleware,
-    registerGlobalHandlers
-} = require('./src/utils/logger');
-
-registerGlobalHandlers();
-
+const GlobalExceptionsHandler = require('./src/middleware/globalExceptionHandler');
 const { sequelize, initModels } = require('./src/models');
 
 // Import routes
 const authRoutes = require('./src/routes/auth/auth.routes');
-const accountRoutes = require('./src/routes/financial/money.routes');
-const betRoutes = require('./src/routes/bets/bet.routes');
-const userRoutes = require('./src/routes/users/user.routes');
-const financialRoutes = require('./src/routes/financial/money.routes');
-const notificationRoutes = require('./src/routes/notifications/notification.routes');
-const bookingCodeRoutes = require('./src/routes/bookingcode/bookingCode.routes');
-const selectionRoutes = require('./src/routes/selections/selection.routes');
+const bookingCodeRoutes = require('./src/routes/bookingCode/bookingCode.routes');
+const betRoutes = require('./src/routes/bet/bet.routes');
+const moneyRoute = require('./src/routes/money/money.route');
+const rewardRoutes = require('./src/routes/reward/dailyReward.routes');
+const adminDepositRoutes = require('./src/routes/admin/adminDeposit.routes');
+const adminUserRoutes = require('./src/routes/admin/adminUser.routes');
+const matchRoute = require('./src/routes/match/match.routes');
+const notificationRoutes = require('./src/routes/notification/notification.routes');
+const depositRoutes = require('./src/routes/deposit/deposit.routes');
+const notificationService = require('./src/services/notification/notification.service');
+const fcmService = require('./src/services/fcm/fcm.service');
+const { verifyAccessToken } = require('./src/utils/jwt');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+const server = http.createServer(app);
 
 /* =========================
    GLOBAL MIDDLEWARES
 ========================= */
 
-// Express Proxy Trust (Zingatia hii ukiwa kwenye VPS nyuma ya Nginx/Cloudflare)
 app.set('trust proxy', 1);
-
-app.use(requestLogger);
 
 // Helmet Configuration
 app.use(
@@ -48,44 +50,68 @@ app.use(
 const allowedOrigins = [
     'http://localhost:5173',
     'http://localhost:5174',
-    'http://13.140.157.161',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:5174',
+    'http://169.58.22.120',
     'https://sunbeting.com',
     'https://www.sunbeting.com'
 ];
 
-app.use(cors({
+const corsOptions = {
     origin: (origin, callback) => {
-        // Allow requests with no origin (like Postman or server-to-server)
         if (!origin) return callback(null, true);
-        
         if (allowedOrigins.includes(origin) || origin.endsWith('.sunbeting.com')) {
             return callback(null, true);
         }
-        
         console.error(`❌ CORS Blocked Origin: ${origin}`);
         return callback(new Error('CORS Not Allowed'), false);
     },
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'PUT', 'OPTIONS'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-}));
+};
 
+app.use(cors(corsOptions));
 app.use(express.json());
+
+/* =========================
+   SOCKET.IO CONFIGURATION
+========================= */
+
+const io = new Server(server, {
+    cors: corsOptions
+});
+
+notificationService.initNotificationService(io);
+
+// Event listener pale client (Vue/React/Mobile) anapoconnect
+io.on('connection', (socket) => {
+    console.log(`⚡ New WebSocket Client Connected: ${socket.id}`);
+
+    // Join room `user:<id>` kama token ipo (real-time notifications kwa mteja)
+    try {
+        const token = socket.handshake.auth?.token;
+        if (token) {
+            const decoded = verifyAccessToken(token);
+            if (decoded && decoded.id) {
+                socket.join(`user:${decoded.id}`);
+                console.log(`🔔 Joined notifications room: user:${decoded.id}`);
+            }
+        }
+    } catch (err) {
+        // si lazima - tuendelee bila room
+    }
+
+    socket.on('disconnect', () => {
+        console.log(` Client Disconnected: ${socket.id}`);
+    });
+});
 
 /* =========================
    ROUTES
 ========================= */
 
-app.use('/api/auth', authRoutes);
-app.use('/api/booking-codes', bookingCodeRoutes);
-app.use('/api/selections', selectionRoutes);
-app.use('/api/bets', betRoutes);
-app.use('/api/financial', financialRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/admin', userRoutes);
-app.use('/api/account', accountRoutes);
-
-/* Health Check */
+// Health Check
 app.get('/health', (req, res) => {
     res.status(200).json({
         status: 'ok',
@@ -93,30 +119,45 @@ app.get('/health', (req, res) => {
     });
 });
 
-/* =========================
-   ERROR HANDLING
-========================= */
+// Auth & Operational Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/bet', betRoutes);
+app.use('/api/code', bookingCodeRoutes);
+app.use('/api/match', matchRoute);
+app.use('/api/money', moneyRoute);
+app.use('/api/reward', rewardRoutes);
+app.use('/api/user', adminUserRoutes);
+app.use('/api/admin', adminDepositRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/deposit', depositRoutes);
 
-app.use(errorMiddleware);
+/* =========================
+   GLOBAL ERROR HANDLER (MWISHO)
+========================= */
+app.use(GlobalExceptionsHandler);
 
 /* =========================
    START SERVER
 ========================= */
-
 const start = async () => {
     try {
         await sequelize.authenticate();
-        console.log('✅ Database connected successfully');
+        console.log(' Database connected successfully');
 
         await initModels();
-        console.log('✅ Database models synchronized');
+        console.log(' Database models synchronized');
 
-        app.listen(PORT, () => {
-            console.log(`🚀 Server running on port ${PORT}`);
+        await fcmService.initFcm();
+
+        server.listen(PORT, () => {
+            console.log(` Server running on port ${PORT}`);
+
+            startMatchCronJob(io);
+            console.log(' Match Engine Cron Job & WebSockets initialized successfully');
         });
 
     } catch (error) {
-        console.error('❌ Failed to start server:', error.message);
+        console.error(' Failed to start server:', error.message);
         process.exit(1);
     }
 };

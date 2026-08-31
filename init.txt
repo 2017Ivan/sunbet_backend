@@ -1,1 +1,113 @@
-fff
+{
+  "match_id": "MCH-2026-07-28-001",
+  "home_team": "Guayaquil City FC",
+  "away_team": "CD Universidad Catolica",
+  "date": "2026-07-28",
+  "time": "12:30 am",
+  "league": "Ecuador Serie A",
+  "status": "upcoming",
+  "created_at": "2026-07-27T10:00:00Z",
+  "updated_at": "2026-07-28T12:30:00Z",
+
+  "predetermined_script": {
+    "final_ft": { "homeScore": 2, "awayScore": 1 },
+    "final_ht": { "homeScore": 1, "awayScore": 0 },
+    "second_half": { "homeScore": 1, "awayScore": 1 },
+    "first_goal_by": "home",
+    "last_goal_by": "home",
+    "stats": {
+      "corners": { "home": 7, "away": 4 },
+      "yellow_cards": { "home": 3, "away": 4 },
+      "red_cards": { "home": 0, "away": 1 },
+      "shots_on_target": { "home": 8, "away": 5 }
+    },
+    "events_timeline": [
+      { "minute": 2, "type": "FOUL", "team": "home", "description": "Early aggressive tackle in midfield" },
+      { "minute": 6, "type": "SHOT_OFF_TARGET", "team": "away", "description": "Long range effort flies high over the bar" },
+      { "minute": 11, "type": "CORNER", "team": "home", "description": "Inswinging corner punched away by keeper" },
+      { "minute": 15, "type": "FREE_KICK", "team": "home", "description": "Dangerous free-kick just outside the 18-yard box" },
+      { "minute": 19, "type": "YELLOW_CARD", "team": "away", "player": "Midfielder #6", "description": "Tactical foul to stop counter-attack" },
+      { "minute": 23, "type": "GOAL", "team": "home", "current_score": { "home": 1, "away": 0 }, "description": "Power header into top right corner!" },
+      { "minute": 28, "type": "OFFSIDE_GOAL_DISALLOWED", "team": "away", "description": "Ball in the net but flagged for offside!" },
+      { "minute": 34, "type": "INJURY_TIMEOUT", "team": "home", "description": "Physio on court treating defender" },
+      { "minute": 39, "type": "CORNER", "team": "away", "description": "Corner cleared at front post" },
+      { "minute": 43, "type": "YELLOW_CARD", "team": "home", "player": "Defender #3", "description": "Dissent towards the referee" },
+      { "minute": 45, "type": "ADDED_TIME", "description": "3 minutes of extra time added" },
+      { "minute": 48, "type": "HALF_TIME", "current_score": { "home": 1, "away": 0 }, "description": "Referee blows whistle for Half-Time" },
+      
+      { "minute": 46, "type": "SUBSTITUTION", "team": "away", "description": "Striker in, defender out" },
+      { "minute": 50, "type": "SHOT_ON_TARGET", "team": "away", "description": "Stunning reflex save by home goalkeeper!" },
+      { "minute": 55, "type": "CORNER", "team": "home", "description": "Short corner routine fails" },
+      { "minute": 59, "type": "PENALTY_MISSED", "team": "home", "description": "Penalty hits the crossbar and bounces out!" },
+      { "minute": 61, "type": "GOAL", "team": "away", "current_score": { "home": 1, "away": 1 }, "description": "Counter-attack goal! Equalizer!" },
+      { "minute": 66, "type": "YELLOW_CARD", "team": "away", "player": "Defender #4", "description": "Late challenge" },
+      { "minute": 71, "type": "RED_CARD", "team": "away", "player": "Defender #4 (2nd Yellow)", "description": "Second yellow card! Sent off!" },
+      { "minute": 74, "type": "VAR_CHECK", "team": "home", "description": "Reviewing potential handball in box - No Penalty" },
+      { "minute": 80, "type": "SHOT_ON_TARGET", "team": "home", "description": "Header saved on the goal line!" },
+      { "minute": 84, "type": "GOAL", "team": "home", "current_score": { "home": 2, "away": 1 }, "description": "Dramatical late winner in the bottom corner!" },
+      { "minute": 88, "type": "YELLOW_CARD", "team": "home", "player": "Striker #9", "description": "Taking shirt off during goal celebration" },
+      { "minute": 90, "type": "ADDED_TIME", "description": "5 minutes added on" },
+      { "minute": 93, "type": "YELLOW_CARD", "team": "away", "player": "Goalkeeper #1", "description": "Time wasting frustration" },
+      { "minute": 95, "type": "FULL_TIME", "current_score": { "home": 2, "away": 1 }, "description": "Full-Time whistle! Home team wins 2-1!" }
+    ]
+  },
+
+  "odds": {
+    "1X2": { "1": 2.50, "X": 3.20, "2": 2.80 },
+    "Double_Chance": { "1X": 1.40, "X2": 1.50, "12": 1.30 },
+    "BTTS": { "Yes": 1.90, "No": 1.85 },
+    "Over_Under": {
+      "OVER_0.5": 1.10, "UNDER_0.5": 5.89,
+      "OVER_1.5": 1.53, "UNDER_1.5": 2.34,
+      "OVER_2.5": 2.65, "UNDER_2.5": 1.42,
+      "OVER_3.5": 5.11, "UNDER_3.5": 1.13,
+      "OVER_4.5": 9.83, "UNDER_4.5": 1.02
+    },
+    "Correct_Score": {
+      "0-0": 38.93, "1-0": 22.45, "0-1": 24.64,
+      "1-1": 43.30, "2-0": 24.81, "0-2": 42.87,
+      "2-1": 21.94, "1-2": 28.17, "2-2": 38.16,
+      "3-0": 39.38, "0-3": 11.38, "3-1": 34.91,
+      "1-3": 15.31, "3-2": 9.96, "2-3": 32.55,
+      "Other": 38.87
+    },
+    "Handicap": {
+      "Home_-1": 1.80, "Home_-2": 3.50,
+      "Away_+1": 2.20, "Away_+2": 1.40
+    },
+    "HT_FT": {
+      "Home_Home": 1.80, "Home_Draw": 12.00,
+      "Home_Away": 30.00, "Draw_Home": 4.00,
+      "Draw_Draw": 5.50, "Draw_Away": 15.00,
+      "Away_Home": 40.00, "Away_Draw": 20.00,
+      "Away_Away": 8.00
+    },
+    "BTTS_Win": {
+      "Home_Yes": 4.50, "Home_No": 2.00,
+      "Away_Yes": 8.00, "Away_No": 15.00,
+      "Draw_Yes": 6.00
+    },
+    "Odd_Even": { "Odd": 1.90, "Even": 1.85 },
+    "Total_Goals": {
+      "0": 20.00, "1": 10.00, "2": 3.50,
+      "3": 5.00, "4": 8.00, "5+": 15.00
+    },
+    "Both_Halves": {
+      "OVER_0.5_Both": 2.50, "OVER_1.5_Both": 5.00,
+      "UNDER_0.5_Both": 10.00
+    },
+    "First_Last_Goal": {
+      "First_Goal_Home": 1.80, "First_Goal_Away": 2.20,
+      "First_Goal_No": 20.00, "Last_Goal_Home": 1.70,
+      "Last_Goal_Away": 2.30, "Last_Goal_No": 20.00
+    },
+    "Highest_Scoring_Half": {
+      "First_Half": 2.50, "Second_Half": 2.00,
+      "Equal": 3.50
+    },
+    "Clean_Sheet": {
+      "Home": 1.80, "Away": 2.50,
+      "Both": 8.00, "Neither": 1.90
+    }
+  }
+}

@@ -1,12 +1,16 @@
+// models/index.js
+
 const sequelize = require('../config/database');
-const User = require('./user.model');
-const Bet = require('./bet.model');
-const PasswordReset = require('./password-reset.model');
-const BookingCode = require('./bookingCode.model');
-const Notification = require('./notification.model');
-const DepositTransaction = require('./depositTransaction.model');
+const User = require('./user/user.model');
+
+
+
 // Collect all models
-const models = { User, Bet,PasswordReset ,BookingCode,Notification,DepositTransaction};
+const models = { 
+  User, 
+ 
+
+};
 
 // Initialize associations - Run associate methods if they exist
 Object.keys(models).forEach(modelName => {
@@ -18,10 +22,10 @@ Object.keys(models).forEach(modelName => {
 const initModels = async () => {
   try {
     await sequelize.sync({
-      alter: true 
+      alter: false 
+      // force: true 
     });
   
-
     console.log('Database models synchronized successfully');
   } catch (error) {
     console.error('Error synchronizing models:', error.message);
@@ -33,7 +37,6 @@ module.exports = {
   sequelize,
   initModels,
   User,
-  Bet,
-  PasswordReset,
-  BookingCode
+ 
+
 };

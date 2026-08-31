@@ -1,31 +1,27 @@
 // controllers/auth.controller.js
-const userService = require('../../services/auth.service');
+const userService = require('../../services/auth/auth.service');
+const responseBuilder = require('../../utils/response.builder')
+
 
 // ============ REGISTER ============
-const register = async (req, res) => {
+async function register(req, res,next){
   try {
-    const { phone_number, password } = req.body;
-    if (!phone_number || !password) {
-      return res.status(400).json({ message: 'Phone and password required' });
-    }
-    const user = await userService.registerUser(phone_number, password);
-    res.status(201).json({ message: 'User registered successfully', data: user });
-  } catch (error) {
-    res.status(400).json({ message: error.message });
+     const { phone_number, password, promo_code } = req.body;
+    const result = await userService.registerUser(phone_number, password, promo_code);
+    return res.status(result.status || 200).json(result);
+  } catch (err) {
+    next(err)
   }
 };
 
 // ============ LOGIN ============
-const login = async (req, res) => {
+async function login(req, res,next) {
   try {
     const { phone_number, password } = req.body;
-    if (!phone_number || !password) {
-      return res.status(400).json({ message: 'Phone and password required' });
-    }
-    const user = await userService.loginUser(phone_number, password);
-    res.status(200).json({ message: 'Login successful', data: user });
-  } catch (error) {
-    res.status(401).json({ message: error.message });
+    const result = await userService.loginUser(phone_number, password);
+    return res.status(result.status || 200).json(result);
+  } catch (err) {
+    next(err)
   }
 };
 
@@ -83,13 +79,25 @@ const changePasswordByPhone = async (req, res) => {
 };
 
 // ============ GET PROFILE ============
-const getProfile = async (req, res) => {
+const getProfile = async (req, res,next) => {
   try {
     const userId = req.user.id;
     const user = await userService.getProfile(userId);
-    res.status(200).json({ message: 'Profile retrieved', data: user });
-  } catch (error) {
-    res.status(400).json({ message: error.message });
+    // Hakikisha inarudisha balance
+    res.status(200).json({ 
+      message: 'Profile retrieved', 
+      data: {
+        id: user.id,
+        phone_number: user.phone_number,
+        balance: user.balance, // <- Hii ni muhimu!
+        role: user.role,
+        status: user.status,
+        created_at: user.createdAt,
+        updated_at: user.updatedAt
+      }
+    });
+  } catch (err) {
+    next(err)
   }
 };
 

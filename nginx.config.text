@@ -1,0 +1,167 @@
+server {
+
+    # Tunaiambia Nginx ipokee request yoyote inayokuja kupitia IP ya server yako
+    server_name boombet365.com www.boombet365.com;
+
+    root /var/www/boombet_frontend;
+    index index.html;
+
+    # Frontend Routing (Vue/Vite)
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Proxy kwenda kwenye PM2 Backend (Node/Python)
+    location /api/ {
+        proxy_pass http://127.0.0.1:5000/api/;
+        proxy_http_version 1.1;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    listen [::]:443 ssl ipv6only=on; # managed by Certbot
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/boombet365.com/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/boombet365.com/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+
+}
+server {
+    if ($host = www.boombet365.com) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    if ($host = boombet365.com) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    listen 80;
+    listen [::]:80;
+    server_name boombet365.com www.boombet365.com;
+    return 404; # managed by Certbot
+
+
+
+
+}
+
+this file without backend 
+
+server {
+    listen 80;
+    listen [::]:80;
+
+    server_name 109.123.246.213;
+
+    root /var/www/boombet_frontend;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Vue static files caching
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+}
+
+
+without ssl certificate
+
+server {
+    server_name boombet365.com www.boombet365.com;
+
+    root /var/www/boombet_frontend;
+    index index.html;
+
+    # Frontend Routing (Vue/Vite)
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Proxy kwenda kwenye PM2 Backend (Node/Python)
+    location /api/ {
+        proxy_pass http://127.0.0.1:5000/api/;
+        proxy_http_version 1.1;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ============ ONGEZA HII KWA WEBSOCKET ============
+    location /socket.io/ {
+        proxy_pass http://127.0.0.1:5000/socket.io/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # HTTP (Port 80) - No SSL
+    listen 80;
+    listen [::]:80;
+}
+
+
+
+run certbot commands
+install 
+apt install certbot python3-certbot-nginx -y
+run command to create certificate 
+certbot --nginx -d boombet365.com -d www.boombet365.com
+
+
+Hatua ya 2: Unda directory ya SSH keys ikiwa haipo
+
+mkdir -p ~/.ssh
+cd ~/.ssh
+
+
+# Generate key (tumia jina linalokumbusha project)
+ssh-keygen -t ed25519 -C "github-actions-suntest-frontend" -f ~/.ssh/suntest_frontend_key
+
+
+Hatua ya 4: Angalia keys zimeundwa
+
+ls -la ~/.ssh/
+
+Authorize private key kuingia server (muhimu!)
+
+# Hakikisha public key iko kwenye authorized_keys
+cat ~/.ssh/suntest_frontend_key.pub >> ~/.ssh/authorized_keys
+
+# Angalia imeongezwa
+cat ~/.ssh/authorized_keys
+
+2. PRIVATE KEY - Weka kwenye GitHub Secrets
+
+# Copy private key yako
+cat ~/.ssh/suntest_frontend_key
+
+# Copy yote - inaanza na "-----BEGIN OPENSSH PRIVATE KEY-----"
+
+
