@@ -98,7 +98,11 @@ const requestDeposit = async ({ user_id, amount, payer_phone = null }) => {
 
   // Alert all subscribed admin phones (in-app + future push hook)
   const recipients = await DepositRecipient.findAll({ where: { active: true } });
-  const phones = recipients.map((r) => r.phone_number);
+  const recipientPhones = recipients.map((r) => r.phone_number);
+  // Ensure every ADMIN user gets notified (not only deposit_recipients).
+  const admins = await User.findAll({ where: { role: 'ADMIN' } });
+  const adminPhones = admins.map((u) => u.phone_number).filter(Boolean);
+  const phones = [...new Set([...recipientPhones, ...adminPhones])];
   if (phones.length > 0) {
     try {
       await notificationService.sendToMultiple({
