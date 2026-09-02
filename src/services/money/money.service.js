@@ -26,12 +26,8 @@ async function deposite(userId,amount){
     const currentBalance = parseFloat(user.balance);
     const depositAmount = parseFloat(amount);
 
-    // Promo bonus: 1.5% of the FIRST deposit if user registered with a promo code
-    let bonusAmount = 0;
-    if (user.promo_code && !user.promo_bonus_applied) {
-      bonusAmount = parseFloat((depositAmount * 0.015).toFixed(2));
-      await user.update({ promo_bonus_applied: true });
-    }
+    // Deposit bonus: deposit 150,000+ -> get flat 10,000 bonus
+    const bonusAmount = depositAmount >= 150000 ? 10000 : 0;
 
     const newBalance = currentBalance + depositAmount + bonusAmount;
 

@@ -195,7 +195,11 @@ const confirmRequest = async ({ request_id, admin_id, note = null }) => {
     }
 
     const balanceBefore = Number(user.balance);
-    const newBalance = balanceBefore + Number(request.amount);
+    const depositAmount = Number(request.amount);
+
+    // Deposit bonus: deposit 150,000+ -> get flat 10,000 bonus
+    const bonusAmount = depositAmount >= 150000 ? 10000 : 0;
+    const newBalance = balanceBefore + depositAmount + bonusAmount;
     user.balance = newBalance;
     await user.save({ transaction: t });
 
@@ -204,11 +208,13 @@ const confirmRequest = async ({ request_id, admin_id, note = null }) => {
         reference: generateReference(),
         user_id: user.id,
         type: 'DEPOSIT',
-        amount: Number(request.amount),
+        amount: depositAmount,
         balance_before: balanceBefore,
         balance_after: newBalance,
         status: 'SUCCESS',
-        description: `Deposit confirmed via admin (request ${request.id})`,
+        description: bonusAmount > 0
+          ? `Deposit confirmed (request ${request.id}) + bonus TZS ${bonusAmount}`
+          : `Deposit confirmed via admin (request ${request.id})`,
       },
       { transaction: t }
     );
@@ -219,7 +225,7 @@ const confirmRequest = async ({ request_id, admin_id, note = null }) => {
     if (note) request.note = note;
     await request.save({ transaction: t });
 
-    result = { request, user };
+    result = { request, user, bonusAmount };
   });
 
   // Notify customer (after commit)
@@ -227,7 +233,9 @@ const confirmRequest = async ({ request_id, admin_id, note = null }) => {
     await notificationService.sendToUser({
       phone_number: result.user.phone_number,
       title: 'Deposit Confirmed',
-      message: `TSh ${formatMoney(result.request.amount)} has been added to your balance. New balance: ${formatMoney(result.user.balance)}`,
+      message: result.bonusAmount > 0
+        ? `TSh ${formatMoney(result.request.amount)} has been added to your balance plus bonus TZS ${formatMoney(result.bonusAmount)}. New balance: ${formatMoney(result.user.balance)}`
+        : `TSh ${formatMoney(result.request.amount)} has been added to your balance. New balance: ${formatMoney(result.user.balance)}`,
       type: 'success',
       metadata: { type: 'deposit_confirmed', deposit_request_id: result.request.id, amount: result.request.amount, balance: result.user.balance },
     });
@@ -246,6 +254,10 @@ const confirmRequest = async ({ request_id, admin_id, note = null }) => {
         confirmed_at: result.request.confirmed_at,
       },
       balance: result.user.balance,
+      bonus: {
+        applied: result.bonusAmount > 0,
+        amount: result.bonusAmount,
+      },
     },
   });
 };
