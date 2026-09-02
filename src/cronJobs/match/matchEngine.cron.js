@@ -49,6 +49,11 @@ const processMatchesLifecycle = async (io = null) => {
 
         const elapsedMinutes = Math.floor((now - matchStartTime) / (1000 * 60));
 
+        // 🧪 DEBUG LOG: Angalia kila mechi ya UPCOMING ikiwa imefika muda wa kucheza
+        if (match.status === 'UPCOMING') {
+          console.log(`[MATCH ENGINE] CHECK: "${match.home_team} vs ${match.away_team}" | date=${match.date} time=${match.time} | start=${matchStartTime.toISOString()} | elapsedMin=${elapsedMinutes} | status=${match.status}`);
+        }
+
       // STATE 1: UPCOMING -> LIVE
       if (match.status === 'UPCOMING' && elapsedMinutes >= 0) {
         await match.update({
