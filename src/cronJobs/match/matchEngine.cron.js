@@ -15,19 +15,39 @@ const processMatchesLifecycle = async (io = null) => {
     const now = new Date();
 
     for (const match of activeMatches) {
-      if (!match.time || !match.date) continue;
+      // Per-match guard: hitilafu kwenye mechi moja haisimamishe zingine
+      try {
+        if (!match.time || !match.date) continue;
 
-      // PARSE TIME (e.g., "11:00 am" -> Date Object)
-      const timeParts = match.time.trim().toLowerCase().match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/);
-      if (!timeParts) continue;
+        // PARSE TIME (e.g., "11:00 am" -> Date Object)
+        const timeParts = match.time.trim().toLowerCase().match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/);
+        if (!timeParts) continue;
 
-      let hours = parseInt(timeParts[1], 10);
-      const minutes = parseInt(timeParts[2], 10);
-      if (timeParts[3] === 'pm' && hours < 12) hours += 12;
-      if (timeParts[3] === 'am' && hours === 12) hours = 0;
+        let hours = parseInt(timeParts[1], 10);
+        const minutes = parseInt(timeParts[2], 10);
+        if (timeParts[3] === 'pm' && hours < 12) hours += 12;
+        if (timeParts[3] === 'am' && hours === 12) hours = 0;
 
-      const matchStartTime = new Date(`${match.date}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`);
-      const elapsedMinutes = Math.floor((now - matchStartTime) / (1000 * 60));
+        const timeStr = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+
+        // Robust timestamp parsing (date inaweza kuwa "2026-09-02", "02/09/2026",
+        // "2/9/2026", "Sep 2 2026" n.k.) — EPUKA Invalid Date.
+        let matchStartTime = new Date(`${match.date}T${timeStr}`);
+        if (isNaN(matchStartTime.getTime())) {
+          matchStartTime = new Date(`${match.date} ${timeStr}`);
+        }
+        if (isNaN(matchStartTime.getTime())) {
+          matchStartTime = new Date(match.date);
+          if (!isNaN(matchStartTime.getTime()) && hours !== undefined) {
+            matchStartTime.setHours(hours, minutes, 0, 0);
+          }
+        }
+        if (isNaN(matchStartTime.getTime())) {
+          console.warn(`[MATCH ENGINE] Skipping mechi ${match.id}: date/time isivalidi (${match.date} ${match.time})`);
+          continue;
+        }
+
+        const elapsedMinutes = Math.floor((now - matchStartTime) / (1000 * 60));
 
       // STATE 1: UPCOMING -> LIVE
       if (match.status === 'UPCOMING' && elapsedMinutes >= 0) {
@@ -95,7 +115,12 @@ const processMatchesLifecycle = async (io = null) => {
           console.log(`[MATCH ENGINE] Mechi ${match.id} imemalizika FT (${finalScore.homeScore}-${finalScore.awayScore})`);
 
           // Settle Bets Zote Za Mechi Hii (kupitia betSettlement.service)
-          await settlePendingBets(match.id);
+          // Guard pekee: kama settlement inashindikana, mechi nyingine ziendelee.
+          try {
+            await settlePendingBets(match.id);
+          } catch (settleErr) {
+            console.error(`[MATCH ENGINE] Settlement error kwa mechi ${match.id}:`, settleErr.message);
+          }
 
           if (io) {
             io.emit('match_finished', {
@@ -104,6 +129,9 @@ const processMatchesLifecycle = async (io = null) => {
             });
           }
         }
+      }
+      } catch (matchErr) {
+        console.error(`[MATCH ENGINE] Error kwenye mechi ${match.id} (${match.home_team} vs ${match.away_team}):`, matchErr.message);
       }
     }
   } catch (error) {
