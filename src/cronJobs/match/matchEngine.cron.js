@@ -36,6 +36,20 @@ const processMatchesLifecycle = async (io = null) => {
           current_score: { home: 0, away: 0 }
         });
         console.log(`[MATCH ENGINE] Mechi ID ${match.id} (${match.home_team} vs ${match.away_team}) ipo LIVE!`);
+
+        if (io) {
+          io.emit('match_status_change', {
+            match_id: match.id,
+            status: 'LIVE',
+            match_data: match
+          });
+
+          io.emit('match_score_update', {
+            match_id: match.id,
+            current_score: { home: 0, away: 0 },
+            elapsed_minute: 0
+          });
+        }
       }
 
       // STATE 2: LIVE SCORE UPDATES VIA TIMELINE
