@@ -127,6 +127,18 @@ function convertToLocalFormat(phone) {
   return cleaned;
 }
 
+// PalmPesa wants the phone in international format (255...), not local (0...).
+function convertToInternationalFormat(phone) {
+  let cleaned = String(phone || '').replace(/\D/g, '');
+  if (cleaned.startsWith('255')) {
+    return cleaned;
+  }
+  if (cleaned.startsWith('0')) {
+    return '255' + cleaned.substring(1);
+  }
+  return '255' + cleaned;
+}
+
 // Credit the user's balance (dedicated method so PalmPesa + manual share logic).
 async function creditBalance({ user_id, amount, bonusAmount = 0, reference, description, metaType }) {
   let creditedUser;
@@ -290,7 +302,7 @@ const depositViaPalmPesa = async ({ user_id, amount, phone_number }) => {
   const requestData = {
     name: payer.name,
     email: payer.email,
-    phone: localPhone,
+    phone: convertToInternationalFormat(localPhone),
     amount: amountNum,
     transaction_id: transactionId,
     address: payer.address,
