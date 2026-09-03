@@ -12,6 +12,7 @@ const Transaction = require('./transaction/transaction.model');
 const Notification = require('./notification/notification.model');
 const DepositRequest = require('./deposit/depositRequest.model');
 const DepositRecipient = require('./deposit/depositRecipient.model');
+const WithdrawRequest = require('./withdraw/withdrawRequest.model');
 const UserDevice = require('./userDevice/userDevice.model');
 
 // User <-> Bet (One-to-Many)
@@ -47,6 +48,10 @@ UserDevice.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 User.hasMany(DepositRequest, { foreignKey: 'user_id', as: 'deposit_requests' });
 DepositRequest.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
+// User <-> WithdrawRequest (One-to-Many)
+User.hasMany(WithdrawRequest, { foreignKey: 'user_id', as: 'withdraw_requests' });
+WithdrawRequest.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+
 // Collect all models
 const models = { 
   User, 
@@ -58,6 +63,7 @@ const models = {
   Notification,
   DepositRequest,
   DepositRecipient,
+  WithdrawRequest,
   UserDevice
 
 };
@@ -95,6 +101,7 @@ module.exports = {
   Notification,
   DepositRequest,
   DepositRecipient,
+  WithdrawRequest,
   UserDevice
 
 };
