@@ -142,6 +142,46 @@ const generateFixtureSchedule = (from = 1, to = 7) => {
   return { date: dateStr, time: timeStr };
 };
 
+// Generate a schedule that falls on a specific day of the week.
+// `day` uses JS convention: 0 = Sunday, 1 = Monday ... 6 = Saturday.
+// If `day` is null, fall back to a random day within [from, to].
+const generateFixtureScheduleOnDay = (day, from = 1, to = 7) => {
+  if (day === null || day === undefined) {
+    return generateFixtureSchedule(from, to);
+  }
+
+  const targetDay = parseInt(day, 10);
+  if (isNaN(targetDay) || targetDay < 0 || targetDay > 6) {
+    return generateFixtureSchedule(from, to);
+  }
+
+  const now = new Date();
+  const currentDay = now.getDay();
+
+  // Siku ngapi mpaka itakapofika siku tuliyochagua (mbele tu)
+  let diff = targetDay - currentDay;
+  if (diff < 0) diff += 7;
+  if (diff === 0) diff = 7; // leo tayari ni siku hiyo -> tupa wiki ijayo
+
+  // Kuhakikisha matokeo yako ndani ya dirisha la from..to
+  const minDiff = Math.max(1, parseInt(from, 10) || 1);
+  const maxDiff = Math.max(minDiff, parseInt(to, 10) || 7);
+  if (diff < minDiff) diff += 7;
+  if (diff > maxDiff) diff -= 7;
+  if (diff < minDiff) diff = minDiff;
+
+  const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
+
+  // Saa za mchezo: 12:00 - 22:00
+  const hour = 12 + Math.floor(Math.random() * 11);
+  const minute = [0, 15, 30, 45][Math.floor(Math.random() * 4)];
+
+  const dateStr = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  const timeStr = `${pad(hour)}:${pad(minute)}`;
+
+  return { date: dateStr, time: timeStr };
+};
+
 const pickRandomLeague = () => {
   return LEAGUES_BANK[Math.floor(Math.random() * LEAGUES_BANK.length)];
 };
@@ -151,5 +191,6 @@ module.exports = {
   generateTeamNames,
   generateFixturesTeams,
   generateFixtureSchedule,
+  generateFixtureScheduleOnDay,
   pickRandomLeague
 };

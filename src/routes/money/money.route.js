@@ -4,12 +4,20 @@ const router = express.Router();
 const moneyController = require('../../controllers/money/money.controller');
 const { authenticate, authorize } = require('../../middleware/auth.middleware');
 
-// ============ PUBLIC (no auth) - PalmPesa webhook ============
+// ============ PUBLIC (no auth) - webhooks ============
 router.post('/palmpesa-webhook', moneyController.palmPesaWebhook);
+router.post('/snipe-webhook', moneyController.snipeWebhook);
 
-// ============ DEPOSIT (PalmPesa) ============
+// ============ UNIFIED DEPOSIT (routes to active gateway) ============
+router.post('/deposit', authenticate, moneyController.deposit);
+router.get('/payment/status/:transactionId', authenticate, moneyController.checkDepositStatus);
+
+// ============ PAYMENT GATEWAY SWITCH (admin) ============
+router.get('/deposit/gateway', authenticate, moneyController.getPaymentGateway);
+router.post('/deposit/gateway', authenticate, authorize(['ADMIN']), moneyController.setPaymentGateway);
+
+// ============ DEPOSIT (PalmPesa direct - backwards compatible) ============
 router.post('/deposit/palmpesa', authenticate, moneyController.depositViaPalmPesa);
-router.get('/payment/status/:transactionId', authenticate, moneyController.checkPalmPesaStatus);
 
 // ============ WITHDRAW ============
 router.post('/withdraw', authenticate, moneyController.withdraw);

@@ -4,12 +4,14 @@ const matchRepository = require('../../repositories/match/match.repository');
 const { generatePredeterminedScript, generateMatchOdds } = require('../../utils/matchGenerator.util');
 const {
   generateFixturesTeams,
-  generateFixtureSchedule,
+  generateFixtureScheduleOnDay,
   pickRandomLeague
 } = require('../../utils/fixtureGenerator.util');
 
 // ============ NEW: AUTO-GENERATE RANDOM MATCHES ============
-const generateRandomMatches = async ({ count = 5, league = null, daysFrom = 1, daysTo = 7 } = {}) => {
+// `day` follows JS convention: 0 = Sunday, 1 = Monday ... 6 = Saturday.
+// When `day` is null the schedule falls back to a random day.
+const generateRandomMatches = async ({ count = 5, league = null, daysFrom = 1, daysTo = 7, day = null } = {}) => {
   const num = Math.max(1, Math.min(50, parseInt(count) || 5));
   const leagueName = (league && String(league).trim()) || pickRandomLeague();
   const from = Math.max(0, parseInt(daysFrom) || 1);
@@ -23,7 +25,7 @@ const generateRandomMatches = async ({ count = 5, league = null, daysFrom = 1, d
     if (!pair) continue;
 
     const { home_team, away_team } = pair;
-    const schedule = generateFixtureSchedule(from, to);
+    const schedule = generateFixtureScheduleOnDay(day, from, to);
     const autoScript = generatePredeterminedScript(home_team, away_team);
     const fullMarkets = generateMatchOdds();
 
@@ -50,7 +52,8 @@ const generateRandomMatches = async ({ count = 5, league = null, daysFrom = 1, d
   return {
     created: createdMatches,
     total: createdMatches.length,
-    league: leagueName
+    league: leagueName,
+    day: day === null || day === undefined ? null : parseInt(day, 10)
   };
 };
 

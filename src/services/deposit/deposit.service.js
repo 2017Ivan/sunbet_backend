@@ -64,7 +64,9 @@ const removeRecipient = async (id) => {
 // DEPOSIT REQUESTS
 // =============================================
 
-// Customer hits "Deposit" -> record request + alert subscribed admins
+// Customer hits "Deposit" -> credit the balance IMMEDIATELY (no admin
+// approval needed). A read-only notification is sent to admins so they
+// are aware, but they can no longer accept/cancel a deposit.
 const requestDeposit = async ({ user_id, amount, payer_phone = null }) => {
   const amountNum = Number(amount);
   if (!amountNum || amountNum <= 0) {
@@ -76,30 +78,70 @@ const requestDeposit = async ({ user_id, amount, payer_phone = null }) => {
     throw new CustomExceptions('User not found', 404);
   }
 
-  const request = await DepositRequest.create({
-    user_id,
-    amount: amountNum,
-    payer_phone: payer_phone || user.phone_number || null,
-    status: 'PENDING',
+  // Deposit bonus: deposit 150,000+ -> get flat 10,000 bonus
+  const bonusAmount = amountNum >= 150000 ? 10000 : 0;
+
+  let request;
+  let creditedUser;
+
+  await sequelize.transaction(async (t) => {
+    const lockedUser = await User.findByPk(user.id, { transaction: t, lock: t.LOCK.UPDATE });
+    if (!lockedUser) throw new CustomExceptions('User not found', 404);
+
+    const balanceBefore = Number(lockedUser.balance);
+    const newBalance = parseFloat((balanceBefore + amountNum + bonusAmount).toFixed(2));
+    lockedUser.balance = newBalance;
+    await lockedUser.save({ transaction: t });
+
+    await Transaction.create(
+      {
+        reference: generateReference(),
+        user_id: lockedUser.id,
+        type: 'DEPOSIT',
+        amount: amountNum,
+        balance_before: balanceBefore,
+        balance_after: newBalance,
+        status: 'SUCCESS',
+        description: bonusAmount > 0
+          ? `Auto deposit + bonus TZS ${bonusAmount}`
+          : 'Auto deposit',
+      },
+      { transaction: t }
+    );
+
+    request = await DepositRequest.create(
+      {
+        user_id: lockedUser.id,
+        amount: amountNum,
+        payer_phone: payer_phone || lockedUser.phone_number || null,
+        status: 'CONFIRMED',
+        confirmed_at: new Date(),
+      },
+      { transaction: t }
+    );
+
+    creditedUser = lockedUser;
   });
 
-  // Notify customer that request was received
+  // Notify customer that the balance was credited successfully
   try {
     await notificationService.sendToUser({
-      phone_number: user.phone_number,
-      title: 'Deposit Request Sent',
-      message: `Your request to fund TSh ${formatMoney(amountNum)} was received. Check your phone for the prompt to enter your PIN.`,
-      type: 'info',
-      metadata: { type: 'deposit_request', deposit_request_id: request.id, amount: amountNum, status: 'PENDING' },
+      phone_number: creditedUser.phone_number,
+      title: 'Deposit Successful',
+      message: bonusAmount > 0
+        ? `TSh ${formatMoney(amountNum)} has been added to your balance plus bonus TZS ${formatMoney(bonusAmount)}. New balance: ${formatMoney(creditedUser.balance)}`
+        : `TSh ${formatMoney(amountNum)} has been added to your balance. New balance: ${formatMoney(creditedUser.balance)}`,
+      type: 'success',
+      metadata: { type: 'deposit_confirmed', deposit_request_id: request.id, amount: amountNum, balance: creditedUser.balance, status: 'CONFIRMED' },
     });
   } catch (err) {
     console.error('Deposit customer notify failed:', err.message);
   }
 
-  // Alert all subscribed admin phones (in-app + future push hook)
+  // Read-only alert to all subscribed admin phones (admins only view it,
+  // there is NO accept/cancel for deposits anymore).
   const recipients = await DepositRecipient.findAll({ where: { active: true } });
   const recipientPhones = recipients.map((r) => r.phone_number);
-  // Ensure every ADMIN user gets notified (not only deposit_recipients).
   const admins = await User.findAll({ where: { role: 'ADMIN' } });
   const adminPhones = admins.map((u) => u.phone_number).filter(Boolean);
   const phones = [...new Set([...recipientPhones, ...adminPhones])];
@@ -108,14 +150,14 @@ const requestDeposit = async ({ user_id, amount, payer_phone = null }) => {
       await notificationService.sendToMultiple({
         phone_numbers: phones,
         title: DEPOSIT_NOTIFY_TITLE,
-        message: `Deposit request of TSh ${formatMoney(amountNum)} from ${payer_phone || user.phone_number}`,
+        message: `Deposit of TSh ${formatMoney(amountNum)} from ${payer_phone || creditedUser.phone_number} — auto-credited.`,
         type: DEPOSIT_NOTIFY_TYPE,
         metadata: {
           type: 'deposit_request',
           deposit_request_id: request.id,
           amount: amountNum,
-          payer_phone: payer_phone || user.phone_number,
-          status: 'PENDING',
+          payer_phone: payer_phone || creditedUser.phone_number,
+          status: 'CONFIRMED',
         },
       });
     } catch (err) {
@@ -126,14 +168,19 @@ const requestDeposit = async ({ user_id, amount, payer_phone = null }) => {
 
   return responseBuilder.success({
     status: 201,
-    message: 'Deposit request sent, waiting for admin approval',
+    message: 'Deposit successful, balance updated',
     data: {
       deposit_request: {
         id: request.id,
         amount: request.amount,
         payer_phone: request.payer_phone,
         status: request.status,
-        created_at: request.created_at,
+        confirmed_at: request.confirmed_at,
+      },
+      balance: creditedUser.balance,
+      bonus: {
+        applied: bonusAmount > 0,
+        amount: bonusAmount,
       },
     },
   });
@@ -172,130 +219,8 @@ const getAllRequests = async ({ status = null, limit = 50, offset = 0 } = {}) =>
   });
 };
 
-// Admin confirms payment received -> credit user balance atomically
-const confirmRequest = async ({ request_id, admin_id, note = null }) => {
-  if (!request_id) {
-    throw new CustomExceptions('Deposit request ID is required', 400);
-  }
-
-  let result;
-  await sequelize.transaction(async (t) => {
-    const request = await DepositRequest.findOne({
-      where: { id: request_id, status: 'PENDING' },
-      transaction: t,
-      lock: t.LOCK.UPDATE,
-    });
-    if (!request) {
-      throw new CustomExceptions('Deposit request not found or already processed', 400);
-    }
-
-    const user = await User.findByPk(request.user_id, { transaction: t, lock: t.LOCK.UPDATE });
-    if (!user) {
-      throw new CustomExceptions('User not found', 404);
-    }
-
-    const balanceBefore = Number(user.balance);
-    const depositAmount = Number(request.amount);
-
-    // Deposit bonus: deposit 150,000+ -> get flat 10,000 bonus
-    const bonusAmount = depositAmount >= 150000 ? 10000 : 0;
-    const newBalance = balanceBefore + depositAmount + bonusAmount;
-    user.balance = newBalance;
-    await user.save({ transaction: t });
-
-    await Transaction.create(
-      {
-        reference: generateReference(),
-        user_id: user.id,
-        type: 'DEPOSIT',
-        amount: depositAmount,
-        balance_before: balanceBefore,
-        balance_after: newBalance,
-        status: 'SUCCESS',
-        description: bonusAmount > 0
-          ? `Deposit confirmed (request ${request.id}) + bonus TZS ${bonusAmount}`
-          : `Deposit confirmed via admin (request ${request.id})`,
-      },
-      { transaction: t }
-    );
-
-    request.status = 'CONFIRMED';
-    request.admin_id = admin_id || null;
-    request.confirmed_at = new Date();
-    if (note) request.note = note;
-    await request.save({ transaction: t });
-
-    result = { request, user, bonusAmount };
-  });
-
-  // Notify customer (after commit)
-  try {
-    await notificationService.sendToUser({
-      phone_number: result.user.phone_number,
-      title: 'Deposit Confirmed',
-      message: result.bonusAmount > 0
-        ? `TSh ${formatMoney(result.request.amount)} has been added to your balance plus bonus TZS ${formatMoney(result.bonusAmount)}. New balance: ${formatMoney(result.user.balance)}`
-        : `TSh ${formatMoney(result.request.amount)} has been added to your balance. New balance: ${formatMoney(result.user.balance)}`,
-      type: 'success',
-      metadata: { type: 'deposit_confirmed', deposit_request_id: result.request.id, amount: result.request.amount, balance: result.user.balance },
-    });
-  } catch (err) {
-    console.error('Deposit confirm notify failed:', err.message);
-  }
-
-  return responseBuilder.success({
-    message: 'Deposit confirmed and balance updated',
-    data: {
-      deposit_request: {
-        id: result.request.id,
-        amount: result.request.amount,
-        status: result.request.status,
-        admin_id: result.request.admin_id,
-        confirmed_at: result.request.confirmed_at,
-      },
-      balance: result.user.balance,
-      bonus: {
-        applied: result.bonusAmount > 0,
-        amount: result.bonusAmount,
-      },
-    },
-  });
-};
-
-const cancelRequest = async ({ request_id, admin_id, note = null }) => {
-  if (!request_id) {
-    throw new CustomExceptions('Deposit request ID is required', 400);
-  }
-  const request = await DepositRequest.findOne({ where: { id: request_id, status: 'PENDING' } });
-  if (!request) {
-    throw new CustomExceptions('Deposit request not found or already processed', 400);
-  }
-  request.status = 'CANCELLED';
-  request.admin_id = admin_id || null;
-  request.cancelled_at = new Date();
-  if (note) request.note = note;
-  await request.save();
-
-  try {
-    const user = await userRepository.findById(request.user_id);
-    if (user) {
-      await notificationService.sendToUser({
-        phone_number: user.phone_number,
-        title: 'Payment Failed',
-        message: `Your payment of TSh ${formatMoney(request.amount)} was not completed. Please try again.`,
-        type: 'warning',
-        metadata: { type: 'deposit_cancelled', deposit_request_id: request.id, amount: request.amount },
-      });
-    }
-  } catch (err) {
-    console.error('Deposit cancel notify failed:', err.message);
-  }
-
-  return responseBuilder.success({
-    message: 'Deposit request cancelled',
-    data: { deposit_request: { id: request.id, status: request.status } },
-  });
-};
+// NOTE: Admin accept/cancel for deposits was REMOVED. Every deposit is
+// auto-credited on request (see requestDeposit above).
 
 module.exports = {
   getRecipients,
@@ -304,6 +229,4 @@ module.exports = {
   requestDeposit,
   getMyRequests,
   getAllRequests,
-  confirmRequest,
-  cancelRequest,
 };

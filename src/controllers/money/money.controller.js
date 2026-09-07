@@ -1,6 +1,44 @@
 // controllers/money/money.controller.js
 const moneyService = require('../../services/money/money.service');
 
+// ============ UNIFIED DEPOSIT (PalmPesa <-> Snipe by active gateway) ============
+
+// POST /api/money/deposit - initiate a deposit via the ACTIVE gateway
+async function deposit(req, res, next) {
+  try {
+    const { amount, phone_number } = req.body;
+    const result = await moneyService.initiateDeposit({
+      user_id: req.user.id,
+      amount,
+      phone_number,
+    });
+    return res.status(result.status).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /api/money/deposit/gateway - current active deposit gateway
+async function getPaymentGateway(req, res, next) {
+  try {
+    const result = moneyService.getDepositGateway();
+    return res.status(result.status).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /api/money/deposit/gateway { gateway } - ADMIN switches deposit gateway
+async function setPaymentGateway(req, res, next) {
+  try {
+    const { gateway } = req.body;
+    const result = moneyService.setDepositGateway(gateway);
+    return res.status(result.status).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // ============ DEPOSIT (PALMPESA) ============
 
 // POST /api/money/deposit/palmpesa - initiate PalmPesa deposit
@@ -29,11 +67,22 @@ async function palmPesaWebhook(req, res, next) {
   }
 }
 
-// GET /api/money/payment/status/:transactionId
-async function checkPalmPesaStatus(req, res, next) {
+// POST /api/money/snipe-webhook - PUBLIC webhook (no auth)
+async function snipeWebhook(req, res, next) {
+  try {
+    const { status, body } = await moneyService.snipeWebhook(req.body);
+    return res.status(status).json(body);
+  } catch (err) {
+    console.error('Snipe Webhook handled error:', err.message);
+    return res.status(200).json({ message: 'Webhook received', status: 'accepted' });
+  }
+}
+
+// GET /api/money/payment/status/:transactionId - works for BOTH gateways
+async function checkDepositStatus(req, res, next) {
   try {
     const { transactionId } = req.params;
-    const result = await moneyService.checkPalmPesaStatus({
+    const result = await moneyService.checkDepositStatus({
       user_id: req.user.id,
       transactionId,
     });
@@ -124,9 +173,16 @@ async function balance(req, res, next) {
 }
 
 module.exports = {
+  // Unified deposit
+  deposit,
+  getPaymentGateway,
+  setPaymentGateway,
+  checkDepositStatus,
+  // PalmPesa
   depositViaPalmPesa,
   palmPesaWebhook,
-  checkPalmPesaStatus,
+  // Snipe
+  snipeWebhook,
   withdraw,
   getMyWithdrawRequests,
   getAllWithdrawRequests,

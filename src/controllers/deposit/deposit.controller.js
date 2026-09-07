@@ -54,39 +54,11 @@ async function getMyRequests(req, res, next) {
   }
 }
 
-// ============ ADMIN DEPOSIT REQUESTS ============
+// ============ ADMIN DEPOSIT REQUESTS (READ-ONLY) ============
 async function getAllRequests(req, res, next) {
   try {
     const { status, limit, offset } = req.query;
     const result = await depositService.getAllRequests({ status, limit, offset });
-    return res.status(result.status).json(result);
-  } catch (err) {
-    next(err);
-  }
-}
-
-async function confirmRequest(req, res, next) {
-  try {
-    const { request_id, note } = req.body;
-    const result = await depositService.confirmRequest({
-      request_id,
-      admin_id: req.user.id,
-      note,
-    });
-    return res.status(result.status).json(result);
-  } catch (err) {
-    next(err);
-  }
-}
-
-async function cancelRequest(req, res, next) {
-  try {
-    const { request_id, note } = req.body;
-    const result = await depositService.cancelRequest({
-      request_id,
-      admin_id: req.user.id,
-      note,
-    });
     return res.status(result.status).json(result);
   } catch (err) {
     next(err);
@@ -100,6 +72,4 @@ module.exports = {
   requestDeposit,
   getMyRequests,
   getAllRequests,
-  confirmRequest,
-  cancelRequest,
 };

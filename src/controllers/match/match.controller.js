@@ -125,12 +125,13 @@ const updateMatchOdds = async (req, res) => {
 // ============ NEW: AUTO-GENERATE RANDOM MATCHES ============
 const generateMatches = async (req, res) => {
   try {
-    const { count, league, daysFrom, daysTo } = req.body || {};
+    const { count, league, daysFrom, daysTo, day } = req.body || {};
     const result = await matchService.generateRandomMatches({
       count,
       league,
       daysFrom,
-      daysTo
+      daysTo,
+      day
     });
 
     return res.status(201).json({

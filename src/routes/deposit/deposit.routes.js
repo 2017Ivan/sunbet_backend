@@ -13,9 +13,7 @@ router.delete('/recipients/:id', authenticate, authorize(['ADMIN']), depositCont
 router.post('/request', authenticate, depositController.requestDeposit);
 router.get('/my', authenticate, depositController.getMyRequests);
 
-// ============ ADMIN ============
+// ============ ADMIN (READ-ONLY - no accept/cancel for deposits) ============
 router.get('/requests', authenticate, authorize(['ADMIN']), depositController.getAllRequests);
-router.post('/confirm', authenticate, authorize(['ADMIN']), depositController.confirmRequest);
-router.post('/cancel', authenticate, authorize(['ADMIN']), depositController.cancelRequest);
 
 module.exports = router;
