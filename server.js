@@ -25,6 +25,7 @@ const notificationRoutes = require('./src/routes/notification/notification.route
 const depositRoutes = require('./src/routes/deposit/deposit.routes');
 const notificationService = require('./src/services/notification/notification.service');
 const fcmService = require('./src/services/fcm/fcm.service');
+const heroRoutes = require('./src/routes/hero/hero.routes');
 const { verifyAccessToken } = require('./src/utils/jwt');
 
 const app = express();
@@ -130,6 +131,7 @@ app.use('/api/user', adminUserRoutes);
 app.use('/api/admin', adminDepositRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/deposit', depositRoutes);
+app.use('/api/hero', heroRoutes);
 
 /* =========================
    GLOBAL ERROR HANDLER (MWISHO)
