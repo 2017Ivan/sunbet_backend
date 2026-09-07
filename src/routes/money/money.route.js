@@ -6,6 +6,9 @@ const { authenticate, authorize } = require('../../middleware/auth.middleware');
 
 // ============ PUBLIC (no auth) - webhooks ============
 router.post('/palmpesa-webhook', moneyController.palmPesaWebhook);
+// Snipe hutuma webhook kwa '/api/snippe-webhook' (ndio URL iliyosajiliwa kwenye
+// dashboard ya Snippe). '/snipe-webhook' imebaki kwa ushirikiano wa zamani.
+router.post('/snippe-webhook', moneyController.snipeWebhook);
 router.post('/snipe-webhook', moneyController.snipeWebhook);
 
 // ============ UNIFIED DEPOSIT (routes to active gateway) ============

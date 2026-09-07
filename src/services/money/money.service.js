@@ -530,7 +530,7 @@ const depositViaSnipe = async ({ user_id, amount, phone_number }) => {
     details: { amount: amountNum, currency: 'TZS' },
     phone_number: snipePhone,
     customer,
-    webhook_url: `${process.env.BASE_URL || 'https://sunbeting.com'}/api/money/snipe-webhook`,
+    webhook_url: `${process.env.BASE_URL || 'https://sunbeting.com'}/api/snippe-webhook`,
     metadata: {
       user_id,
       transaction_id: transactionId,
