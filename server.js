@@ -11,6 +11,7 @@ const { startMatchCronJob, processMatchesLifecycle } = require('./src/cronJobs/m
 
 const GlobalExceptionsHandler = require('./src/middleware/globalExceptionHandler');
 const { sequelize, initModels } = require('./src/models');
+const { seedProviderCredentials } = require('./src/config/paymentGateway.config');
 
 // Import routes
 const authRoutes = require('./src/routes/auth/auth.routes');
@@ -148,6 +149,9 @@ const start = async () => {
 
         await initModels();
         console.log(' Database models synchronized');
+
+        await seedProviderCredentials();
+        console.log(' Provider API keys synchronized (DB)');
 
         await fcmService.initFcm();
 

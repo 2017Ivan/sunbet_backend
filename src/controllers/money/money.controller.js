@@ -39,6 +39,26 @@ async function setPaymentGateway(req, res, next) {
   }
 }
 
+// GET /api/money/deposit/gateway/keys - ADMIN retrieves provider API keys
+async function getProviderKeys(req, res, next) {
+  try {
+    const result = moneyService.getProviderKeys();
+    return res.status(result.status).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// PUT /api/money/deposit/gateway/keys - ADMIN updates provider API keys
+async function updateProviderKeys(req, res, next) {
+  try {
+    const result = await moneyService.updateProviderKeys(req.body);
+    return res.status(result.status).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // ============ DEPOSIT (PALMPESA) ============
 
 // POST /api/money/deposit/palmpesa - initiate PalmPesa deposit
@@ -177,6 +197,8 @@ module.exports = {
   deposit,
   getPaymentGateway,
   setPaymentGateway,
+  getProviderKeys,
+  updateProviderKeys,
   checkDepositStatus,
   // PalmPesa
   depositViaPalmPesa,

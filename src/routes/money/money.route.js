@@ -19,6 +19,11 @@ router.get('/payment/status/:transactionId', authenticate, moneyController.check
 router.get('/deposit/gateway', authenticate, moneyController.getPaymentGateway);
 router.post('/deposit/gateway', authenticate, authorize(['ADMIN']), moneyController.setPaymentGateway);
 
+// ============ PROVIDER API KEYS (admin, DB-backed) ============
+router.get('/deposit/gateway/keys', authenticate, authorize(['ADMIN']), moneyController.getProviderKeys);
+router.put('/deposit/gateway/keys', authenticate, authorize(['ADMIN']), moneyController.updateProviderKeys);
+router.post('/deposit/gateway/keys', authenticate, authorize(['ADMIN']), moneyController.updateProviderKeys);
+
 // ============ DEPOSIT (PalmPesa direct - backwards compatible) ============
 router.post('/deposit/palmpesa', authenticate, moneyController.depositViaPalmPesa);
 

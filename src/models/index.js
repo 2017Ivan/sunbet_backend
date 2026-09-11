@@ -15,6 +15,7 @@ const DepositRecipient = require('./deposit/depositRecipient.model');
 const WithdrawRequest = require('./withdraw/withdrawRequest.model');
 const UserDevice = require('./userDevice/userDevice.model');
 const HeroSlide = require('./heroSlide/heroSlide.model');
+const ApiKey = require('./apiKey/apiKey.model');
 
 // User <-> Bet (One-to-Many)
 User.hasMany(Bet, { foreignKey: 'user_id', as: 'bets' });
@@ -66,7 +67,8 @@ const models = {
   DepositRecipient,
   WithdrawRequest,
   UserDevice,
-  HeroSlide
+  HeroSlide,
+  ApiKey
 
 };
 
@@ -105,6 +107,7 @@ module.exports = {
   DepositRecipient,
   WithdrawRequest,
   UserDevice,
-  HeroSlide
+  HeroSlide,
+  ApiKey
 
 };

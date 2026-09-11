@@ -22,6 +22,8 @@ const {
   setActiveGateway,
   getProvider,
   PROVIDERS,
+  getProviderCredentials,
+  updateProviderCredentials,
 } = require('../../config/paymentGateway.config');
 const axios = require('axios');
 const crypto = require('crypto');
@@ -767,7 +769,7 @@ const getDepositGateway = () =>
     },
   });
 
-// POST /api/money/deposit/gateway  { gateway: 'palmpesa' | 'snipe' }
+// POST /api/money/deposit/gateway { gateway: 'palmpesa' | 'snipe' }
 const setDepositGateway = (gateway) => {
   const result = setActiveGateway(gateway);
   if (!result.ok) throw new CustomExceptions(result.error || 'Invalid gateway', 400);
@@ -775,6 +777,35 @@ const setDepositGateway = (gateway) => {
     status: 200,
     message: `Payment gateway switched to ${result.active.toUpperCase()}`,
     data: { active: result.active },
+  });
+};
+
+// ============ PROVIDER API KEYS (ADMIN) ============
+
+// GET /api/money/deposit/gateway/keys (ADMIN) - retrieve provider API keys
+const getProviderKeys = () =>
+  responseBuilder.success({
+    status: 200,
+    message: 'Provider credentials retrieved',
+    data: {
+      active: getActiveGateway(),
+      providers: getProviderCredentials(),
+    },
+  });
+
+// PUT/POST /api/money/deposit/gateway/keys (ADMIN) - update provider API keys
+// Body: { gateway: 'palmpesa'|'snipe', apiToken?/userId?/baseUrl?/apiKey? }
+const updateProviderKeys = async (body = {}) => {
+  const { gateway, ...updates } = body;
+  const result = await updateProviderCredentials(gateway, updates);
+  if (!result.ok) throw new CustomExceptions(result.error || 'Failed to update credentials', 400);
+  return responseBuilder.success({
+    status: 200,
+    message: `API keys za ${gateway} zimesasishwa na kuhifadhiwa kwenye database`,
+    data: {
+      active: getActiveGateway(),
+      providers: getProviderCredentials(),
+    },
   });
 };
 
@@ -1102,6 +1133,9 @@ module.exports = {
   checkDepositStatus,
   getDepositGateway,
   setDepositGateway,
+  // Provider API keys (DB-backed, admin)
+  getProviderKeys,
+  updateProviderKeys,
   // PalmPesa
   depositViaPalmPesa,
   palmPesaWebhook,
