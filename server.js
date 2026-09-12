@@ -26,6 +26,7 @@ const notificationRoutes = require('./src/routes/notification/notification.route
 const depositRoutes = require('./src/routes/deposit/deposit.routes');
 const notificationService = require('./src/services/notification/notification.service');
 const fcmService = require('./src/services/fcm/fcm.service');
+const moneyService = require('./src/services/money/money.service');
 const heroRoutes = require('./src/routes/hero/hero.routes');
 const { verifyAccessToken } = require('./src/utils/jwt');
 
@@ -160,6 +161,11 @@ const start = async () => {
 
             startMatchCronJob(io);
             console.log(' Match Engine Cron Job & WebSockets initialized successfully');
+
+            // AnyPay Reconciliation: safety net inayokamilisha deposits
+            // ambazo webhook hazijafika / hazijafanana (inapoll check-order-status).
+            moneyService.startAnyPayReconciliation();
+            console.log(' AnyPay reconciliation cron started');
         });
 
     } catch (error) {
