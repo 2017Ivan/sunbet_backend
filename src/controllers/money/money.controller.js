@@ -109,6 +109,16 @@ async function anyPayWebhook(req, res, next) {
   }
 }
 
+// POST /api/money/anypay/reconcile - ADMIN forces the AnyPay reconciliation sweep now
+async function anyPayReconcile(req, res, next) {
+  try {
+    const result = await moneyService.runAnyPayReconciliation();
+    return res.status(result.status).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // GET /api/money/payment/status/:transactionId - works for BOTH gateways
 async function checkDepositStatus(req, res, next) {
   try {
@@ -218,6 +228,7 @@ module.exports = {
   snipeWebhook,
   // AnyPay
   anyPayWebhook,
+  anyPayReconcile,
   withdraw,
   getMyWithdrawRequests,
   getAllWithdrawRequests,

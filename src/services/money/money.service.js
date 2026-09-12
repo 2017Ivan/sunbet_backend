@@ -844,10 +844,12 @@ const depositViaAnyPay = async ({ user_id, amount, phone_number }) => {
 };
 
 // POST /api/money/anypay-webhook  (PUBLIC, no auth)
+// Hii ndiyo njia ya moja kwa moja ya ku-credit balance: AnyPay inapotuma webhook
+// yenye status 'completed', tunaongeza amount kwenye account ya user mara moja.
 const anyPayWebhook = async (body) => {
   console.log('🔥 AnyPay Webhook received:', JSON.stringify(body, null, 2));
 
-  // Payload ya webhook inaweza kuwa chini ya "payload", "data", au moja kwa moja.
+  // Payload ya webhook inaweza kuwa chini ya "payload" (V2), "data", au root (V1).
   const inner = body.payload || body.data || body;
 
   const orderRefs = [
@@ -857,19 +859,23 @@ const anyPayWebhook = async (body) => {
     body.order_id,
     inner.reference,
     inner.transid,
+    inner.transactionId,
   ].filter(Boolean);
 
-  const paymentStatus = String(inner.status || body.status || inner.code || '').toUpperCase();
+  const paymentStatus = String(inner.status || body.status || '').toUpperCase();
+  const code = String(inner.code || body.code || '').toUpperCase();
   const isCompleted =
     paymentStatus === 'COMPLETED' ||
     paymentStatus === 'SUCCESS' ||
+    code === '00' ||
     paymentStatus === '00';
 
-  if (orderRefs.length === 0) {
-    console.error('Missing order reference in AnyPay webhook');
-    return { status: 400, body: { message: 'Missing order reference' } };
+  if (!isCompleted && paymentStatus && paymentStatus !== 'FAILED') {
+    console.log(`ℹ️ AnyPay webhook status si completed (${paymentStatus || 'unknown'}) - tunaacha bila credit.`);
+    return { status: 200, body: { message: 'Webhook received', status: paymentStatus || 'unknown' } };
   }
 
+  // 1) Match kwa reference (order_id / transactionId).
   let foundTransaction = null;
   let foundKey = null;
   for (const [key, value] of global.anypayTransactions.entries()) {
@@ -889,8 +895,76 @@ const anyPayWebhook = async (body) => {
     if (foundTransaction) break;
   }
 
+  // 2) Fallback: match kwa namba ya simu (msisdn) + kiasi.
+  if (!foundTransaction && inner.msisdn) {
+    const webhookPhoneInt = String(inner.msisdn).replace(/\D/g, '').replace(/^255/, '0');
+    const webhookAmount = Number(inner.amount);
+    for (const [key, value] of global.anypayTransactions.entries()) {
+      if (value.status === 'completed') continue;
+      const storedPhone = String(value.phone || '').replace(/\D/g, '').replace(/^255/, '0');
+      const amountOk = !webhookAmount || Number(value.amount) === webhookAmount;
+      if (storedPhone && storedPhone === webhookPhoneInt && amountOk) {
+        foundTransaction = value;
+        foundKey = key;
+        break;
+      }
+    }
+  }
+
   if (!foundTransaction) {
-    console.log(`AnyPay transaction not found for refs: ${orderRefs.join(', ')}`);
+    console.log(`AnyPay webhook: transaction not found in memory (refs: ${orderRefs.join(', ') || 'none'} | msisdn: ${inner.msisdn || 'none'})`);
+    // Fallback ya mwisho: inajaribu kwenye DB - DepositRequest za PENDING za
+    // AnyPay zinalinganishwa kwa namba ya simu + kiasi. Hii ina-cover hali
+    // ambapo server ime-restart na transaction in-memory imepotea.
+    if (isCompleted) {
+      try {
+        const webhookPhoneInt = String(inner.msisdn || inner.phone || '').replace(/\D/g, '').replace(/^255/, '0');
+        const webhookAmount = Number(inner.amount);
+        if (webhookPhoneInt && webhookAmount > 0) {
+          const pendingReqs = await DepositRequest.findAll({
+            where: { status: 'PENDING' },
+            order: [['createdAt', 'DESC']],
+          });
+          for (const req of pendingReqs) {
+            const note = req.note || '';
+            if (!note.includes('AnyPay')) continue;
+            const reqPhone = String(req.payer_phone || '').replace(/\D/g, '').replace(/^255/, '0');
+            if (reqPhone === webhookPhoneInt && Number(req.amount) === webhookAmount) {
+              console.log(`✅ AnyPay webhook matched DB DepositRequest ${req.id} (user ${req.user_id}) — crediting`);
+              const bonusAmount = webhookAmount >= 150000 ? 10000 : 0;
+              const result = await creditBalance({
+                user_id: req.user_id,
+                amount: webhookAmount,
+                bonusAmount,
+                reference: generateReference('DEP'),
+                description: bonusAmount > 0
+                  ? `Deposit TZS ${webhookAmount} + bonus TZS ${bonusAmount}`
+                  : `Deposit TZS ${webhookAmount}`,
+                depositRequestId: req.id,
+              });
+              // Re-add kwenye memory map kwa history ya status checks.
+              const txnId = `ANYPAY-DB-${req.id}`;
+              global.anypayTransactions.set(txnId, {
+                user_id: req.user_id,
+                user_phone: null,
+                amount: webhookAmount,
+                phone: req.payer_phone || null,
+                status: 'completed',
+                balance_added: true,
+                new_balance: result.user.balance,
+                deposit_request_id: req.id,
+                completed_at: new Date().toISOString(),
+              });
+              foundTransaction = null; // tayari kumekuwa credit, usijaribu tena.
+              foundKey = txnId;
+              return { status: 200, body: { message: 'Webhook received', status: 'success' } };
+            }
+          }
+        }
+      } catch (dbErr) {
+        console.error('AnyPay webhook DB fallback error:', dbErr.message);
+      }
+    }
     return { status: 200, body: { message: 'Transaction not found - stored for later' } };
   }
 
@@ -898,20 +972,25 @@ const anyPayWebhook = async (body) => {
     return { status: 200, body: { message: 'Already processed' } };
   }
 
-  if (isCompleted) {
-    try {
-      await processSuccessfulAnyPay(foundTransaction, foundKey, {
-        amount: inner.amount,
-        transactionId: inner.transactionId || inner.transid,
-        channel: inner.paymentChannel || inner.channel,
-      });
-    } catch (error) {
-      console.error('❌ Error processing AnyPay webhook balance update:', error);
-    }
-  } else if (paymentStatus === 'FAILED') {
+  if (paymentStatus === 'FAILED') {
     foundTransaction.status = 'failed';
     foundTransaction.updated_at = new Date().toISOString();
     global.anypayTransactions.set(foundKey, foundTransaction);
+    return { status: 200, body: { message: 'Webhook received', status: 'failed' } };
+  }
+
+  // Webhook imethibitisha COMPLETED -> credit balance ya user.
+  try {
+    console.log(`✅ AnyPay webhook COMPLETED → crediting user ${foundTransaction.user_id} with ${inner.amount || foundTransaction.amount} TZS`);
+    await processSuccessfulAnyPay(foundTransaction, foundKey, {
+      amount: inner.amount,
+      transactionId: inner.transactionId || inner.transid,
+      channel: inner.paymentChannel || inner.channel,
+    });
+  } catch (error) {
+    // Tukiweza, basi tutegemee reconciliation cron ku-implement credit baadaye.
+    console.error('❌ Error processing AnyPay webhook balance update:', error);
+    return { status: 500, body: { message: 'Webhook received but credit failed' } };
   }
 
   return { status: 200, body: { message: 'Webhook received', status: 'success' } };
@@ -943,9 +1022,11 @@ async function pollAnyPayOrderStatus(transaction) {
         transaction.lastPolledAmount = data.anypay_amount;
         transaction.lastPolledTransId = data.anypay_transid;
         transaction.lastPolledChannel = data.anypay_channel;
+        console.log(`[ANYPAY] order ${id} → COMPLETED`);
         return 'completed';
       }
       if (currentStatus === 'FAILED') return 'failed';
+      console.log(`[ANYPAY] order ${id} status poll → ${currentStatus || 'NO STATUS'}: ${JSON.stringify(raw).substring(0, 400)}`);
       // Ikiwa API ilirudisha data (order imetambulika) usihangaike na id nyingine.
       if (data && Object.keys(data).length > 0) return 'pending';
     } catch (e) {
@@ -1184,6 +1265,37 @@ function startAnyPayReconciliation() {
 
   console.log('[ANYPAY] Reconciliation cron started (every minute)');
 }
+
+// POST /api/money/anypay/reconcile (ADMIN) - kulazimisha reconciliation sasa hivi
+// na kurudisha hesabu. Hii ni zana ya kuthibitisha na kurekebisha deposits zilizokwama.
+const runAnyPayReconciliation = async () => {
+  await hydratePendingAnyPayTransactions();
+  await reconcileAnyPayPendingTransactions();
+
+  const tracked = [...global.anypayTransactions.values()];
+  const pending = tracked.filter((t) => t.status === 'pending').length;
+  const completed = tracked.filter((t) => t.status === 'completed').length;
+  const failed = tracked.filter((t) => t.status === 'failed').length;
+
+  return responseBuilder.success({
+    status: 200,
+    message: 'AnyPay reconciliation completed',
+    data: {
+      tracked: tracked.length,
+      pending,
+      completed,
+      failed,
+      details: tracked.slice(0, 50).map((t) => ({
+        user_id: t.user_id,
+        amount: t.amount,
+        status: t.status,
+        order_id: t.order_id,
+        deposit_request_id: t.deposit_request_id,
+        new_balance: t.new_balance || null,
+      })),
+    },
+  });
+};
 
 // ============ UNIFIED DEPOSIT DISPATCHER ============
 
@@ -1612,6 +1724,7 @@ module.exports = {
   startAnyPayReconciliation,
   reconcileAnyPayPendingTransactions,
   hydratePendingAnyPayTransactions,
+  runAnyPayReconciliation,
   // Withdraw
   withdraw,
   getMyWithdrawRequests,
