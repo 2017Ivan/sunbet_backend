@@ -6,8 +6,9 @@
 //   A DepositRequest row is kept for history and auto-confirmed on payment.
 //   Admins receive a READ-ONLY notification - there is no accept/cancel.
 // - Deposit via Snipe: same behaviour but through the Snipe mobile-money API.
-// - The ACTIVE deposit gateway (PalmPesa <-> Snipe) is switchable from the admin
-//   panel - admin picks whichever provider is currently reliable.
+// - Deposit via AnyPay: same behaviour through the AnyPay wallet pull API.
+// - The ACTIVE deposit gateway (PalmPesa <-> Snipe <-> AnyPay) is switchable from
+//   the admin panel - admin picks whichever provider is currently reliable.
 // - Withdraw: deducts the balance from the database IMMEDIATELY when the user
 //   clicks withdraw. No notification is sent.
 //   Withdraw does NOT hit any gateway — it operates directly on the database.
@@ -31,6 +32,7 @@ const crypto = require('crypto');
 // ============ PROVIDER CONFIGURATION (keys zote pamoja) ============
 const PALMPESA = getProvider('palmpesa');
 const SNIPPE = getProvider('snipe');
+const ANYPAY = getProvider('anypay');
 
 // Random Tanzanian names & regions so every PalmPesa deposit looks unique
 // (avoids PalmPesa flagging identical payer profiles).
@@ -112,6 +114,11 @@ if (!global.palmPesaTransactions) {
 // In-memory store of pending Snipe transactions keyed by our transaction_id.
 if (!global.snipeTransactions) {
   global.snipeTransactions = new Map();
+}
+
+// In-memory store of pending AnyPay transactions keyed by our transaction_id.
+if (!global.anypayTransactions) {
+  global.anypayTransactions = new Map();
 }
 
 // Random email domain for Snipe payer profiles (kept unique per request).
@@ -639,6 +646,313 @@ const depositViaSnipe = async ({ user_id, amount, phone_number }) => {
   });
 };
 
+// ============ DEPOSIT (ANYPAY) ============
+
+// Credit balance for a confirmed AnyPay payment (reuses creditBalance so
+// deposit_requests is auto-confirmed + history is kept).
+async function processSuccessfulAnyPay(transaction, transactionKey, paymentData) {
+  if (transaction.status === 'completed') return transaction;
+
+  const amount = Number(paymentData.amount) || transaction.amount;
+  const bonusAmount = amount >= 150000 ? 10000 : 0;
+
+  const result = await creditBalance({
+    user_id: transaction.user_id,
+    amount,
+    bonusAmount,
+    reference: generateReference('DEP'),
+    description:
+      bonusAmount > 0
+        ? `Deposit TZS ${amount} + bonus TZS ${bonusAmount}`
+        : `Deposit TZS ${amount}`,
+    depositRequestId: transaction.deposit_request_id || null,
+  });
+
+  transaction.status = 'completed';
+  transaction.balance_added = true;
+  transaction.new_balance = result.user.balance;
+  transaction.completed_at = new Date().toISOString();
+  if (paymentData.transactionId || paymentData.transid || paymentData.anypay_transid) {
+    transaction.transaction_reference =
+      paymentData.transactionId || paymentData.transid || paymentData.anypay_transid;
+  }
+  if (paymentData.channel || paymentData.paymentChannel || paymentData.anypay_channel) {
+    transaction.channel = paymentData.channel || paymentData.paymentChannel || paymentData.anypay_channel;
+  }
+  global.anypayTransactions.set(transactionKey, transaction);
+
+  console.log(`✅ AnyPay balance updated: +${amount} TZS for user ${transaction.user_id}`);
+  console.log(`💰 New balance: ${result.user.balance}`);
+
+  await notifyUser(transaction.user_phone, {
+    title: 'Payment Received',
+    message:
+      bonusAmount > 0
+        ? `Your deposit of TSh ${formatMoney(amount)} was received successfully plus bonus TZS ${formatMoney(bonusAmount)}. New balance: ${formatMoney(result.user.balance)}`
+        : `Your deposit of TSh ${formatMoney(amount)} was received successfully. New balance: ${formatMoney(result.user.balance)}`,
+    type: 'success',
+    metadata: {
+      type: 'deposit_received',
+      deposit_request_id: result.depositRequest.id,
+      amount,
+      balance: result.user.balance,
+    },
+  });
+
+  return transaction;
+}
+
+// POST /api/money/deposit/anypay - initiate an AnyPay wallet pull payment.
+const depositViaAnyPay = async ({ user_id, amount, phone_number }) => {
+  const amountNum = Number(amount);
+  if (!amountNum || amountNum < 500) {
+    throw new CustomExceptions('Amount must be at least 500 TZS', 400);
+  }
+  if (!phone_number) {
+    throw new CustomExceptions('Phone number is required', 400);
+  }
+
+  if (!ANYPAY.apiKey) {
+    throw new CustomExceptions(
+      'AnyPay API key haijawekwa. Msimamizi aweke API key kwanza kwenye admin panel.',
+      500
+    );
+  }
+
+  const user = await userRepository.findById(user_id);
+  if (!user) throw new CustomExceptions('User not found', 404);
+
+  const transactionId = generateTransactionId();
+  const orderId = `ORD-${Date.now()}${Math.floor(1000 + Math.random() * 9000)}`;
+  const anypayPhone = convertToInternationalFormat(phone_number);
+
+  const requestData = {
+    order_id: orderId,
+    phone: anypayPhone,
+    amount: amountNum,
+    webhook_url: `${process.env.BASE_URL || 'https://sunbeting.com'}/api/money/anypay-webhook`,
+    webhook_version: 2,
+  };
+
+  console.log('📤 AnyPay Deposit Request:', JSON.stringify(requestData, null, 2));
+
+  let result;
+  try {
+    const response = await axios.post(
+      `${ANYPAY.baseUrl}/api/payments/wallet/pull/`,
+      requestData,
+      {
+        headers: {
+          'API-Key': ANYPAY.apiKey,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        timeout: 30000,
+      }
+    );
+    result = response.data;
+  } catch (error) {
+    console.error('❌ AnyPay deposit error:', error.message);
+    let errorMessage = 'Failed to initiate payment';
+    if (error.response?.data) {
+      console.error('AnyPay Error:', JSON.stringify(error.response.data, null, 2));
+      errorMessage = error.response.data.message || error.response.data.error || errorMessage;
+    }
+    throw new CustomExceptions(errorMessage, 500);
+  }
+
+  console.log('✅ AnyPay Response:', JSON.stringify(result, null, 2));
+
+  if (result.status !== 'success') {
+    throw new CustomExceptions(result.message || 'Failed to initiate payment', 500);
+  }
+
+  // Keep a PENDING deposit request for history (auto-confirmed on payment).
+  let depositRequest = null;
+  try {
+    depositRequest = await DepositRequest.create({
+      user_id,
+      amount: amountNum,
+      payer_phone: phone_number,
+      status: 'PENDING',
+      note: 'AnyPay auto payment',
+    });
+  } catch (err) {
+    console.error('Failed to create deposit request record:', err.message);
+  }
+
+  global.anypayTransactions.set(transactionId, {
+    user_id,
+    user_phone: user.phone_number,
+    amount: amountNum,
+    phone: phone_number,
+    status: 'pending',
+    order_id: result.order_id || orderId,
+    request_order_id: orderId,
+    anypay_reference: result.payment_reference || null,
+    deposit_request_id: depositRequest ? depositRequest.id : null,
+    created_at: new Date().toISOString(),
+  });
+
+  await notifyUser(user.phone_number, {
+    title: 'Deposit Request Sent',
+    message: `Your request to fund TSh ${formatMoney(amountNum)} was received. Check your phone for the prompt to enter your PIN.`,
+    type: 'info',
+    metadata: {
+      type: 'deposit_request',
+      deposit_request_id: depositRequest ? depositRequest.id : null,
+      transaction_id: transactionId,
+      amount: amountNum,
+      status: 'PENDING',
+    },
+  });
+
+  await notifyAllAdmins({
+    title: 'New Deposit',
+    message: `Deposit of TSh ${formatMoney(amountNum)} from ${user.phone_number} — auto-credited once paid via AnyPay.`,
+    type: 'alert',
+    metadata: {
+      type: 'deposit_request',
+      deposit_request_id: depositRequest ? depositRequest.id : null,
+      amount: amountNum,
+      payer_phone: user.phone_number,
+      status: 'PENDING',
+    },
+  });
+
+  return responseBuilder.success({
+    status: 200,
+    message:
+      result.message === 'Request in progress...'
+        ? 'Payment initiated. Check your phone for the mobile money prompt.'
+        : result.message || 'Payment initiated. Check your phone for the mobile money prompt.',
+    data: {
+      gateway: 'anypay',
+      transaction_id: transactionId,
+      order_id: result.order_id || orderId,
+      payment_reference: result.payment_reference || null,
+      amount: amountNum,
+      phone: phone_number,
+      status: 'pending',
+    },
+  });
+};
+
+// POST /api/money/anypay-webhook  (PUBLIC, no auth)
+const anyPayWebhook = async (body) => {
+  console.log('🔥 AnyPay Webhook received:', JSON.stringify(body, null, 2));
+
+  const payload = body.payload || body;
+  const orderRef =
+    payload.orderReference ||
+    payload.order_id ||
+    body.orderReference ||
+    body.order_id;
+
+  const paymentStatus = String(payload.status || body.status || '').toUpperCase();
+  const isCompleted =
+    paymentStatus === 'COMPLETED' ||
+    paymentStatus === 'SUCCESS' ||
+    paymentStatus === '00';
+
+  if (!orderRef) {
+    console.error('Missing order reference in AnyPay webhook');
+    return { status: 400, body: { message: 'Missing order reference' } };
+  }
+
+  let foundTransaction = null;
+  let foundKey = null;
+  for (const [key, value] of global.anypayTransactions.entries()) {
+    if (value.order_id === orderRef || value.request_order_id === orderRef) {
+      foundTransaction = value;
+      foundKey = key;
+      break;
+    }
+  }
+
+  if (!foundTransaction) {
+    console.log(`AnyPay transaction not found for order: ${orderRef}`);
+    return { status: 200, body: { message: 'Transaction not found - stored for later' } };
+  }
+
+  if (foundTransaction.status === 'completed') {
+    return { status: 200, body: { message: 'Already processed' } };
+  }
+
+  if (isCompleted) {
+    try {
+      await processSuccessfulAnyPay(foundTransaction, foundKey, {
+        amount: payload.amount,
+        transactionId: payload.transactionId || payload.transid,
+        channel: payload.paymentChannel || payload.channel,
+      });
+    } catch (error) {
+      console.error('❌ Error processing AnyPay webhook balance update:', error);
+    }
+  } else if (paymentStatus === 'FAILED') {
+    foundTransaction.status = 'failed';
+    foundTransaction.updated_at = new Date().toISOString();
+    global.anypayTransactions.set(foundKey, foundTransaction);
+  }
+
+  return { status: 200, body: { message: 'Webhook received', status: 'success' } };
+};
+
+// GET /api/money/payment/status/:transactionId  (for AnyPay-originated deposits)
+const checkAnyPayStatus = async ({ user_id, transactionId }) => {
+  const transaction = global.anypayTransactions.get(transactionId);
+  if (!transaction) throw new CustomExceptions('Transaction not found', 404);
+  if (transaction.user_id !== user_id) throw new CustomExceptions('Unauthorized', 403);
+
+  if (transaction.status === 'pending') {
+    try {
+      const response = await axios.get(
+        `${ANYPAY.baseUrl}/api/payments/check-order-status/`,
+        {
+          params: { order_id: transaction.order_id },
+          headers: {
+            'API-Key': ANYPAY.apiKey,
+            Accept: 'application/json',
+          },
+          timeout: 10000,
+        }
+      );
+      const data = (response.data && response.data.data) || {};
+      const currentStatus = String(data.anypay_payment_status || '').toUpperCase();
+
+      if (currentStatus === 'COMPLETED' && transaction.status !== 'completed') {
+        await processSuccessfulAnyPay(transaction, transactionId, {
+          amount: data.anypay_amount,
+          transactionId: data.anypay_transid,
+          channel: data.anypay_channel,
+        });
+      } else if (currentStatus === 'FAILED') {
+        transaction.status = 'failed';
+        transaction.updated_at = new Date().toISOString();
+        global.anypayTransactions.set(transactionId, transaction);
+      }
+    } catch (apiError) {
+      console.error('Error polling AnyPay status:', apiError.message);
+    }
+  }
+
+  return responseBuilder.success({
+    status: 200,
+    message: 'Payment status',
+    data: {
+      transaction_id: transactionId,
+      amount: transaction.amount,
+      phone: transaction.phone,
+      status: transaction.status,
+      gateway: 'anypay',
+      order_id: transaction.order_id,
+      created_at: transaction.created_at,
+      updated_at: transaction.updated_at,
+      new_balance: transaction.new_balance || null,
+    },
+  });
+};
+
 // POST /api/money/snipe-webhook  (PUBLIC, no auth)
 const snipeWebhook = async (body) => {
   console.log('🔥 Snipe Webhook received:', JSON.stringify(body, null, 2));
@@ -733,22 +1047,28 @@ const checkSnipeStatus = async ({ user_id, transactionId }) => {
 
 // ============ UNIFIED DEPOSIT DISPATCHER ============
 
-// POST /api/money/deposit - routes to the ACTIVE gateway (PalmPesa or Snipe).
+// POST /api/money/deposit - routes to the ACTIVE gateway (PalmPesa, Snipe or AnyPay).
 const initiateDeposit = async ({ user_id, amount, phone_number }) => {
   const gateway = getActiveGateway();
+  if (gateway === 'anypay') {
+    return depositViaAnyPay({ user_id, amount, phone_number });
+  }
   if (gateway === 'snipe') {
     return depositViaSnipe({ user_id, amount, phone_number });
   }
   return depositViaPalmPesa({ user_id, amount, phone_number });
 };
 
-// GET /api/money/payment/status/:transactionId - works for BOTH gateways.
+// GET /api/money/payment/status/:transactionId - works for ALL gateways.
 const checkDepositStatus = async ({ user_id, transactionId }) => {
   if (global.palmPesaTransactions.has(transactionId)) {
     return checkPalmPesaStatus({ user_id, transactionId });
   }
   if (global.snipeTransactions.has(transactionId)) {
     return checkSnipeStatus({ user_id, transactionId });
+  }
+  if (global.anypayTransactions.has(transactionId)) {
+    return checkAnyPayStatus({ user_id, transactionId });
   }
   throw new CustomExceptions('Transaction not found', 404);
 };
@@ -769,7 +1089,7 @@ const getDepositGateway = () =>
     },
   });
 
-// POST /api/money/deposit/gateway { gateway: 'palmpesa' | 'snipe' }
+// POST /api/money/deposit/gateway { gateway: 'palmpesa' | 'snipe' | 'anypay' }
 const setDepositGateway = (gateway) => {
   const result = setActiveGateway(gateway);
   if (!result.ok) throw new CustomExceptions(result.error || 'Invalid gateway', 400);
@@ -1144,6 +1464,10 @@ module.exports = {
   depositViaSnipe,
   snipeWebhook,
   checkSnipeStatus,
+  // AnyPay
+  depositViaAnyPay,
+  anyPayWebhook,
+  checkAnyPayStatus,
   // Withdraw
   withdraw,
   getMyWithdrawRequests,

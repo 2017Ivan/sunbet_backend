@@ -98,6 +98,17 @@ async function snipeWebhook(req, res, next) {
   }
 }
 
+// POST /api/money/anypay-webhook - PUBLIC webhook (no auth)
+async function anyPayWebhook(req, res, next) {
+  try {
+    const { status, body } = await moneyService.anyPayWebhook(req.body);
+    return res.status(status).json(body);
+  } catch (err) {
+    console.error('AnyPay Webhook handled error:', err.message);
+    return res.status(200).json({ message: 'Webhook received', status: 'accepted' });
+  }
+}
+
 // GET /api/money/payment/status/:transactionId - works for BOTH gateways
 async function checkDepositStatus(req, res, next) {
   try {
@@ -205,6 +216,8 @@ module.exports = {
   palmPesaWebhook,
   // Snipe
   snipeWebhook,
+  // AnyPay
+  anyPayWebhook,
   withdraw,
   getMyWithdrawRequests,
   getAllWithdrawRequests,

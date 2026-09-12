@@ -1,6 +1,6 @@
 // config/paymentGateway.config.js
 // Central place for all payment provider keys + the ACTIVE deposit gateway.
-// Admin anaweza kubadilisha gateway (PalmPesa <-> Snipe) bila kuandika upya code.
+// Admin anaweza kubadilisha gateway (PalmPesa <-> Snipe <-> AnyPay) bila kuandika upya code.
 // API keys zimehifadhiwa kwenye DATABASE (table 'api_keys') na ku-seed kutoka
 // defaults hapa mara ya kwanza server inapoanza. Uki-zibadilisha via admin,
 // zinahifadhiwa kwenye DB na kutumika mara moja (bila restart).
@@ -20,12 +20,18 @@ const PROVIDERS = {
     apiKey: 'snp_b0c2ed1711e20a8951538a7814fb9eb15e59a73c0c0b45cfdc0f0ca4eecef498',
     baseUrl: 'https://api.snippe.sh/v1',
   },
+  anypay: {
+    name: 'AnyPay',
+    apiKey: 'wq_live_X_YlPf0uyqEKI0MlLt4zi6gdOAP3F1kcTmiN_-LQukU',
+    baseUrl: 'https://anypaytanzania.com',
+  },
 };
 
 // Fields zinazoweza kuhaririwa (kuhifadhiwa DB) kwa kila provider.
 const CREDENTIAL_FIELDS = {
   palmpesa: ['apiToken', 'userId', 'baseUrl'],
   snipe: ['apiKey', 'baseUrl'],
+  anypay: ['apiKey', 'baseUrl'],
 };
 
 const DEFAULT_GATEWAY = 'palmpesa';
@@ -63,7 +69,7 @@ function getActiveGateway() {
 function setActiveGateway(gateway) {
   const key = String(gateway || '').trim().toLowerCase();
   if (!PROVIDERS[key]) {
-    return { ok: false, error: `Invalid gateway "${gateway}". Chagua palmpesa au snipe.` };
+    return { ok: false, error: `Invalid gateway "${gateway}". Chagua palmpesa, snipe au anypay.` };
   }
   cached = { active: key };
   const persisted = writeSettings(cached);
@@ -108,7 +114,7 @@ function getProviderCredentials() {
 async function updateProviderCredentials(gateway, updates = {}) {
   const key = String(gateway || '').trim().toLowerCase();
   if (!PROVIDERS[key]) {
-    return { ok: false, error: `Invalid gateway "${gateway}". Chagua palmpesa au snipe.` };
+    return { ok: false, error: `Invalid gateway "${gateway}". Chagua palmpesa, snipe au anypay.` };
   }
 
   const allowed = CREDENTIAL_FIELDS[key] || [];

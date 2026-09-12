@@ -10,8 +10,9 @@ router.post('/palmpesa-webhook', moneyController.palmPesaWebhook);
 // dashboard ya Snippe). '/snipe-webhook' imebaki kwa ushirikiano wa zamani.
 router.post('/snippe-webhook', moneyController.snipeWebhook);
 router.post('/snipe-webhook', moneyController.snipeWebhook);
+router.post('/anypay-webhook', moneyController.anyPayWebhook);
 
-// ============ UNIFIED DEPOSIT (routes to active gateway) ============
+// ============ UNIFIED DEPOSIT (routes to active gateway: PalmPesa/Snipe/AnyPay) ============
 router.post('/deposit', authenticate, moneyController.deposit);
 router.get('/payment/status/:transactionId', authenticate, moneyController.checkDepositStatus);
 
