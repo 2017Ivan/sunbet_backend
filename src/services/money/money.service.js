@@ -814,7 +814,7 @@ const depositViaAnyPay = async ({ user_id, amount, phone_number }) => {
 
   await notifyAllAdmins({
     title: 'New Deposit',
-    message: `Deposit of TSh ${formatMoney(amountNum)} from ${user.phone_number} — auto-credited once paid via AnyPay.`,
+    message: `Deposit of TSh ${formatMoney(amountNum)} from ${user.phone_number} — auto-credited once paid.`,
     type: 'alert',
     metadata: {
       type: 'deposit_request',
