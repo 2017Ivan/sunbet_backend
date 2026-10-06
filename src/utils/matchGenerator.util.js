@@ -67,8 +67,9 @@ const generatePredeterminedScript = (homeTeam, awayTeam) => {
   const shAway = awayScore - htAway;
 
   // Extra time minutes allocation
-  const htExtraTimeMins = getRandomInt(1, 3); // +1 hadi +3 mins
-  const ftExtraTimeMins = getRandomInt(3, 6); // +3 hadi +6 mins
+  const htExtraTimeMins = getRandomInt(1, 3); // +1 hadi +3 mins (first half stoppage)
+  const ftExtraTimeMins = getRandomInt(5, 9); // +5 hadi +9 mins (second half stoppage as requested)
+  const halfTimeBreakMins = 15; // 15 minutes halftime break
 
   const timeline = [];
   const usedMinutes = new Set();
@@ -163,8 +164,13 @@ const generatePredeterminedScript = (homeTeam, awayTeam) => {
     }
   }
 
-  // Second Half Flow
-  for (let m = 47; m <= 89; m += getRandomInt(3, 6)) {
+  // Second Half Flow - events are at 46-89 in real terms, but we need to account for halftime break
+  // Wait - the events in second half are "46 onwards" in football, but in our timeline structure
+  // we need to be clear: in the timeline minutes, second half events start at 46 and go to 90+
+  // The halftime break is the gap between 45+ht and 46 - so in real time progression,
+  // after HALF_TIME (at 45+ht) we wait 15 mins, then start second half (46)
+  const halftimeBreakMins = 15;
+  for (let m = 46; m <= 89; m += getRandomInt(3, 6)) {
     if (!usedMinutes.has(m)) {
       usedMinutes.add(m);
       const type = getRandomElement(fillerTypes);
@@ -263,6 +269,7 @@ const generatePredeterminedScript = (homeTeam, awayTeam) => {
     final_ht: { homeScore: htHome, awayScore: htAway },
     second_half: { homeScore: shHome, awayScore: shAway },
     extra_time_mins: { ht: htExtraTimeMins, ft: ftExtraTimeMins },
+    halftime_break_mins: halfTimeBreakMins,
     first_goal_by: firstGoalBy,
     last_goal_by: lastGoalBy,
     stats,

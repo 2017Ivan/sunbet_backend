@@ -39,8 +39,10 @@ const processLiveMatches = async (io) => {
     const matchStart = new Date(`${match.date} ${match.time}`);
     const elapsedMinutes = Math.floor((now - matchStart) / (1000 * 60)); // Minutes elapsed
 
-    const ftExtra = match.predetermined_script?.extra_time_mins?.ft || 3;
-    const totalMatchDuration = 90 + ftExtra;
+    const htExtra = match.predetermined_script?.extra_time_mins?.ht || 1;
+    const ftExtra = match.predetermined_script?.extra_time_mins?.ft || 5;
+    const htBreak = match.predetermined_script?.halftime_break_mins || 15;
+    const totalMatchDuration = (45 + htExtra) + htBreak + (45 + ftExtra); // total real minutes
 
     if (elapsedMinutes >= totalMatchDuration) {
       // MECHI IMEMALIZIKA!
@@ -69,7 +71,25 @@ const processLiveMatches = async (io) => {
       const timeline = match.predetermined_script?.events_timeline || [];
 
       // Update current score from timeline events that occurred at/before elapsedMinutes
-      const pastEvents = timeline.filter(e => parseFloat(e.minute) <= elapsedMinutes);
+      // Adjust elapsed minutes to account for halftime break for timeline events
+      // Before halftime: elapsed is real minutes (0 to ~45+ht)
+      // During halftime break: elapsed is in break, no second half events should fire
+      // After halftime: elapsed = (45 + htExtra) + htBreak + (time in second half)
+      const htExtra = match.predetermined_script?.extra_time_mins?.ht || 1;
+      const htBreak = match.predetermined_script?.halftime_break_mins || 15;
+      const firstHalfEnd = 45 + htExtra;
+      
+      let timelineElapsed = elapsedMinutes;
+      if (timelineElapsed > firstHalfEnd) {
+        timelineElapsed = timelineElapsed - htBreak; // subtract halftime break
+      }
+      // If still in halftime break (timelineElapsed <= firstHalfEnd but elapsed > firstHalfEnd? no - 
+      // if elapsed is between firstHalfEnd and firstHalfEnd+htBreak, then timelineElapsed becomes firstHalfEnd range)
+      // But we need to be precise: during break, don't advance second half events
+      if (elapsedMinutes > firstHalfEnd && elapsedMinutes <= firstHalfEnd + htBreak) {
+        timelineElapsed = firstHalfEnd; // freeze at end of first half
+      }
+      const pastEvents = timeline.filter(e => parseFloat(e.minute) <= timelineElapsed);
       if (pastEvents.length > 0) {
         const latestEvent = pastEvents[pastEvents.length - 1];
         if (latestEvent.current_score) {
@@ -84,7 +104,7 @@ const processLiveMatches = async (io) => {
         io.emit('match_score_update', {
           match_id: match.id,
           current_score: match.current_score,
-          elapsed_minute: elapsedMinutes < 0 ? 0 : elapsedMinutes
+          elapsed_minute: timelineElapsed < 0 ? 0 : timelineElapsed
         });
       }
     }

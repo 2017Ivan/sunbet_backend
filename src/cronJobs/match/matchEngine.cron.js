@@ -77,15 +77,31 @@ const processMatchesLifecycle = async (io = null) => {
         }
       }
 
-      // STATE 2: LIVE SCORE UPDATES VIA TIMELINE
+        // STATE 2: LIVE SCORE UPDATES VIA TIMELINE
       if (match.status === 'LIVE' || (match.status === 'UPCOMING' && elapsedMinutes >= 0)) {
-        const timeline = match.predetermined_script?.events_timeline || [];
+        const script = match.predetermined_script || {};
+        const timeline = script.events_timeline || [];
+        const htExtra = script.extra_time_mins?.ht || 1;
+        const ftExtra = script.extra_time_mins?.ft || 5;
+        const htBreak = script.halftime_break_mins || 15;
+        const firstHalfEnd = 45 + htExtra;
+        const totalMatchDuration = firstHalfEnd + htBreak + (45 + ftExtra);
+        
+        // Calculate timeline elapsed with halftime break
+        let timelineElapsed = elapsedMinutes;
+        if (timelineElapsed > firstHalfEnd) {
+          timelineElapsed = timelineElapsed - htBreak;
+        }
+        if (elapsedMinutes > firstHalfEnd && elapsedMinutes <= firstHalfEnd + htBreak) {
+          timelineElapsed = firstHalfEnd;
+        }
+        if (timelineElapsed < 0) timelineElapsed = 0;
         
         const pastEvents = timeline.filter((evt) => {
           // 🟢 SAFE CONVERSION: Inahakikisha evt.minute ni String kabla ya split()
           const minStr = String(evt.minute ?? "0");
           const minuteNum = parseInt(minStr.split('+')[0], 10);
-          return minuteNum <= elapsedMinutes;
+          return minuteNum <= timelineElapsed;
         });
 
         const latestScore = pastEvents.length > 0
@@ -99,13 +115,20 @@ const processMatchesLifecycle = async (io = null) => {
             io.emit('match_score_update', {
               match_id: match.id,
               current_score: latestScore,
-              elapsed_minute: elapsedMinutes
+              elapsed_minute: timelineElapsed
             });
           }
+        } else if (io && (match.status === 'LIVE' || elapsedMinutes >= 0)) {
+          // Still emit update with correct elapsed minute even if score unchanged
+          io.emit('match_score_update', {
+            match_id: match.id,
+            current_score: match.current_score || latestScore,
+            elapsed_minute: timelineElapsed
+          });
         }
 
         // STATE 3: LIVE -> FINISHED (FT)
-        if (elapsedMinutes >= 90) {
+        if (elapsedMinutes >= totalMatchDuration) {
           const script = match.predetermined_script || {};
           const finalScore = script.final_ft || {
             homeScore: latestScore.home || 0,
