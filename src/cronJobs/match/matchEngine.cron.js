@@ -1,6 +1,8 @@
 const cron = require('node-cron');
 const { Match } = require('../../models');
+const { Op } = require('sequelize');
 const { settlePendingBets, settleAllEligibleOpenBets } = require('../../services/bet/croneJob/betSettlement.service');
+const { getCurrentMatchMarkets } = require('../../utils/matchPricing.util');
 
 // --- SETTLEMENT ENGINE ---
 // Settlement inaendeshwa na betSettlement.service.js (inayolinda OPEN/SETTLED + result WON/LOST)
@@ -9,7 +11,10 @@ const { settlePendingBets, settleAllEligibleOpenBets } = require('../../services
 const processMatchesLifecycle = async (io = null) => {
   try {
     const activeMatches = await Match.findAll({
-      where: { status: ['UPCOMING', 'LIVE'] }
+      where: {
+        status: ['UPCOMING', 'LIVE'],
+        source: { [Op.ne]: 'FOOTBALL_API' }
+      }
     });
 
     const now = new Date();
@@ -52,6 +57,13 @@ const processMatchesLifecycle = async (io = null) => {
         // 🧪 DEBUG LOG: Angalia kila mechi ya UPCOMING ikiwa imefika muda wa kucheza
         if (match.status === 'UPCOMING') {
           console.log(`[MATCH ENGINE] CHECK: "${match.home_team} vs ${match.away_team}" | date=${match.date} time=${match.time} | start=${matchStartTime.toISOString()} | elapsedMin=${elapsedMinutes} | status=${match.status}`);
+          const minutesToKickoff = (matchStartTime.getTime() - now.getTime()) / (1000 * 60);
+          if (io && minutesToKickoff > 0 && minutesToKickoff <= 30) {
+            io.emit('match_odds_update', {
+              match_id: match.id,
+              markets: getCurrentMatchMarkets(match.get({ plain: true }), { now })
+            });
+          }
         }
 
       // STATE 1: UPCOMING -> LIVE
@@ -107,6 +119,13 @@ const processMatchesLifecycle = async (io = null) => {
         const latestScore = pastEvents.length > 0
           ? pastEvents[pastEvents.length - 1].current_score
           : { home: 0, away: 0 };
+        const scoreForUpdate = JSON.stringify(match.current_score) !== JSON.stringify(latestScore)
+          ? latestScore
+          : match.current_score || latestScore;
+        const markets = getCurrentMatchMarkets(
+          { ...match.get({ plain: true }), current_score: scoreForUpdate },
+          { elapsedMinute: timelineElapsed }
+        );
 
         if (JSON.stringify(match.current_score) !== JSON.stringify(latestScore)) {
           await match.update({ current_score: latestScore });
@@ -115,7 +134,8 @@ const processMatchesLifecycle = async (io = null) => {
             io.emit('match_score_update', {
               match_id: match.id,
               current_score: latestScore,
-              elapsed_minute: timelineElapsed
+              elapsed_minute: timelineElapsed,
+              markets
             });
           }
         } else if (io && (match.status === 'LIVE' || elapsedMinutes >= 0)) {
@@ -123,7 +143,8 @@ const processMatchesLifecycle = async (io = null) => {
           io.emit('match_score_update', {
             match_id: match.id,
             current_score: match.current_score || latestScore,
-            elapsed_minute: timelineElapsed
+            elapsed_minute: timelineElapsed,
+            markets
           });
         }
 

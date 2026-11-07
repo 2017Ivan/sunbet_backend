@@ -8,6 +8,7 @@ const { Server } = require('socket.io');
 const helmet = require('helmet');
 const cors = require('cors');
 const { startMatchCronJob, processMatchesLifecycle } = require('./src/cronJobs/match/matchEngine.cron');
+const { startFootballApiSync } = require('./src/services/footballApi/footballApi.service');
 
 const GlobalExceptionsHandler = require('./src/middleware/globalExceptionHandler');
 const { sequelize, initModels } = require('./src/models');
@@ -161,6 +162,7 @@ const start = async () => {
 
             startMatchCronJob(io);
             console.log(' Match Engine Cron Job & WebSockets initialized successfully');
+            startFootballApiSync();
 
             // AnyPay Reconciliation: safety net inayokamilisha deposits
             // ambazo webhook hazijafika / hazijafanana (inapoll check-order-status).

@@ -326,87 +326,307 @@ const generateRandomBaseOdds = (base1X2 = {}) => {
   return adjustGlobal(j1, jX, j2);
 };
 
-// 4. Full markets zitokazo kwenye base 1X2 ya mechi hiyo (kila mechi ina zake)
-const generateMatchOdds = (base1X2 = {}) => {
-  return generateFullMarkets(generateRandomBaseOdds(base1X2));
+const MAX_GOALS = 12;
+const MODEL_MARGIN = 1.05;
+const MAX_GENERATED_ODDS = 15;
+const CORRECT_SCORE_ODDS_MIN = 2;
+const CORRECT_SCORE_ODDS_MAX = 14.99;
+
+const poissonDistribution = (lambda) => {
+  const probabilities = [Math.exp(-lambda)];
+  for (let goals = 1; goals <= MAX_GOALS; goals += 1) {
+    probabilities.push((probabilities[goals - 1] * lambda) / goals);
+  }
+  return probabilities;
 };
 
-// 2. Function inayozalisha Complete Markets kutoka Base 1X2 Odds
-const generateFullMarkets = (base1X2) => {
-  const o1 = parseFloat(base1X2["1"] || 2.50);
-  const oX = parseFloat(base1X2["X"] || 3.20);
-  const o2 = parseFloat(base1X2["2"] || 2.80);
+const getScoreMatrix = (homeLambda, awayLambda) => {
+  const homeGoals = poissonDistribution(homeLambda);
+  const awayGoals = poissonDistribution(awayLambda);
+  const scores = [];
+  let totalProbability = 0;
 
-  return {
-    "1X2": { "1": o1, "X": oX, "2": o2 },
-    "Double_Chance": {
-      "1X": roundOdds(1 / ((1/o1) + (1/oX))),
-      "X2": roundOdds(1 / ((1/oX) + (1/o2))),
-      "12": roundOdds(1 / ((1/o1) + (1/o2)))
-    },
-    "BTTS": {
-      "Yes": roundOdds(o1 > 2.0 && o2 > 2.0 ? 1.85 : 1.95),
-      "No": roundOdds(o1 > 2.0 && o2 > 2.0 ? 1.90 : 1.80)
-    },
-    "Over_Under": {
-      "OVER_0.5": 1.08, "UNDER_0.5": 6.50,
-      "OVER_1.5": 1.45, "UNDER_1.5": 2.50,
-      "OVER_2.5": roundOdds((o1 + o2) / 1.8), "UNDER_2.5": roundOdds((o1 + o2) / 2.2),
-      "OVER_3.5": 3.80, "UNDER_3.5": 1.22,
-      "OVER_4.5": 8.50, "UNDER_4.5": 1.04
-    },
-    "Correct_Score": {
-      "0-0": roundOdds(oX * 2.8), "1-0": roundOdds(o1 * 2.2), "0-1": roundOdds(o2 * 2.2),
-      "1-1": roundOdds(oX * 1.8), "2-0": roundOdds(o1 * 3.5), "0-2": roundOdds(o2 * 3.5),
-      "2-1": roundOdds(o1 * 3.0), "1-2": roundOdds(o2 * 3.0), "2-2": roundOdds(oX * 3.2),
-      "3-0": roundOdds(o1 * 6.0), "0-3": roundOdds(o2 * 6.0), "3-1": roundOdds(o1 * 5.0),
-      "1-3": roundOdds(o2 * 5.0), "3-2": roundOdds(o1 * 7.5), "2-3": roundOdds(o2 * 7.5),
-      "Other": 25.00
-    },
-    "Handicap": {
-      "Home_-1": roundOdds(o1 * 2.1), "Home_-2": roundOdds(o1 * 3.8),
-      "Away_+1": roundOdds(o2 * 0.8), "Away_+2": roundOdds(o2 * 0.5)
-    },
-    "HT_FT": {
-      "Home_Home": roundOdds(o1 * 1.8), "Home_Draw": 14.00,
-      "Home_Away": 32.00, "Draw_Home": roundOdds(o1 * 2.5),
-      "Draw_Draw": roundOdds(oX * 1.6), "Draw_Away": roundOdds(o2 * 2.5),
-      "Away_Home": 35.00, "Away_Draw": 15.00,
-      "Away_Away": roundOdds(o2 * 1.8)
-    },
-    "BTTS_Win": {
-      "Home_Yes": roundOdds(o1 * 2.3), "Home_No": roundOdds(o1 * 1.7),
-      "Away_Yes": roundOdds(o2 * 2.3), "Away_No": roundOdds(o2 * 1.7),
-      "Draw_Yes": roundOdds(oX * 1.9)
-    },
-    "Odd_Even": { "Odd": 1.90, "Even": 1.85 },
-    "Total_Goals": {
-      "0": 8.50, "1": 4.20, "2": 3.40,
-      "3": 4.00, "4": 6.50, "5+": 12.00
-    },
-    "Both_Halves": {
-      "OVER_0.5_Both": 1.80, "OVER_1.5_Both": 4.50,
-      "UNDER_0.5_Both": 8.00
-    },
-    "First_Last_Goal": {
-      "First_Goal_Home": roundOdds(o1 * 0.8), "First_Goal_Away": roundOdds(o2 * 0.8),
-      "First_Goal_No": 10.00, "Last_Goal_Home": roundOdds(o1 * 0.85),
-      "Last_Goal_Away": roundOdds(o2 * 0.85), "Last_Goal_No": 10.00
-    },
-    "Highest_Scoring_Half": {
-      "First_Half": 3.10, "Second_Half": 2.05, "Equal": 3.40
-    },
-    "Clean_Sheet": {
-      "Home": roundOdds(o2 * 1.3), "Away": roundOdds(o1 * 1.3),
-      "Both": 7.00, "Neither": 1.80
+  for (let home = 0; home <= MAX_GOALS; home += 1) {
+    for (let away = 0; away <= MAX_GOALS; away += 1) {
+      const probability = homeGoals[home] * awayGoals[away];
+      scores.push({ home, away, probability });
+      totalProbability += probability;
     }
+  }
+
+  return scores.map((score) => ({
+    ...score,
+    probability: score.probability / totalProbability
+  }));
+};
+
+const marketProbabilities = (scores) => {
+  const probabilities = {
+    home: 0,
+    draw: 0,
+    away: 0,
+    bttsYes: 0,
+    homeCleanSheet: 0,
+    awayCleanSheet: 0,
+    odd: 0,
+    exactGoals: new Map(),
+    correctScore: new Map(),
+    resultAndBtts: new Map(),
+    over: new Map()
+  };
+
+  for (const score of scores) {
+    const { home, away, probability } = score;
+    const total = home + away;
+    if (home > away) probabilities.home += probability;
+    else if (home === away) probabilities.draw += probability;
+    else probabilities.away += probability;
+    if (home > 0 && away > 0) probabilities.bttsYes += probability;
+    if (away === 0) probabilities.homeCleanSheet += probability;
+    if (home === 0) probabilities.awayCleanSheet += probability;
+    if (total % 2 !== 0) probabilities.odd += probability;
+
+    probabilities.exactGoals.set(total, (probabilities.exactGoals.get(total) || 0) + probability);
+    probabilities.correctScore.set(`${home}-${away}`, probability);
+
+    const result = home > away ? 'Home' : away > home ? 'Away' : 'Draw';
+    const btts = home > 0 && away > 0 ? 'Yes' : 'No';
+    const comboKey = `${result}_${btts}`;
+    probabilities.resultAndBtts.set(
+      comboKey,
+      (probabilities.resultAndBtts.get(comboKey) || 0) + probability
+    );
+
+    for (let halfLine = 0.5; halfLine <= 5.5; halfLine += 1) {
+      if (total > halfLine) {
+        probabilities.over.set(halfLine, (probabilities.over.get(halfLine) || 0) + probability);
+      }
+    }
+  }
+
+  return probabilities;
+};
+
+const normalizeImpliedProbabilities = (odds) => {
+  const normalized = normalizeBaseOdds(odds);
+  const values = [normalized['1'], normalized.X, normalized['2']];
+  if (values.some((value) => !value)) return null;
+
+  const total = values.reduce((sum, value) => sum + (1 / value), 0);
+  return {
+    home: (1 / normalized['1']) / total,
+    draw: (1 / normalized.X) / total,
+    away: (1 / normalized['2']) / total
   };
 };
+
+const getGoalLineReference = (referenceMarkets = {}) => {
+  for (const marketKey of ['Over_Under', 'Goal_Line_Fixed']) {
+    const selections = referenceMarkets[marketKey];
+    const over = parseFloat(selections?.['OVER_2.5']);
+    const under = parseFloat(selections?.['UNDER_2.5']);
+    if (over > 1 && under > 1) {
+      const overProbability = (1 / over) / ((1 / over) + (1 / under));
+      return { overProbability };
+    }
+  }
+  return null;
+};
+
+const fitExpectedGoalsParameters = (target, goalLineReference) => {
+  let best = { loss: Infinity, homeLambda: 1.3, awayLambda: 1.3 };
+  const candidates = [];
+
+  for (let homeLambda = 0.2; homeLambda <= 4.4; homeLambda += 0.1) {
+    const distribution = poissonDistribution(homeLambda);
+    const total = distribution.reduce((sum, probability) => sum + probability, 0);
+    const normalized = distribution.map((probability) => probability / total);
+    const cumulative = [];
+    let cumulativeProbability = 0;
+    for (let goals = 0; goals <= MAX_GOALS; goals += 1) {
+      cumulativeProbability += normalized[goals];
+      cumulative[goals] = cumulativeProbability;
+    }
+    candidates.push({ lambda: homeLambda, distribution: normalized, cumulative });
+  }
+
+  for (const home of candidates) {
+    for (const away of candidates) {
+      let homeProbability = 0;
+      let drawProbability = 0;
+      for (let goals = 0; goals <= MAX_GOALS; goals += 1) {
+        drawProbability += home.distribution[goals] * away.distribution[goals];
+        if (goals > 0) {
+          homeProbability += home.distribution[goals] * away.cumulative[goals - 1];
+        }
+      }
+      const awayProbability = 1 - homeProbability - drawProbability;
+      let loss = (homeProbability - target.home) ** 2
+        + (drawProbability - target.draw) ** 2
+        + (awayProbability - target.away) ** 2;
+      if (goalLineReference) {
+        const underProbability = home.distribution[0] * (
+          away.distribution[0] + away.distribution[1] + away.distribution[2]
+        ) + home.distribution[1] * (
+          away.distribution[0] + away.distribution[1]
+        ) + home.distribution[2] * away.distribution[0];
+        const modelOver = 1 - underProbability;
+        loss += 1.5 * (modelOver - goalLineReference.overProbability) ** 2;
+      }
+      if (loss < best.loss) {
+        best = { loss, homeLambda: home.lambda, awayLambda: away.lambda };
+      }
+    }
+  }
+
+  return best;
+};
+
+const fitExpectedGoals = (target, goalLineReference) => {
+  const { homeLambda, awayLambda } = fitExpectedGoalsParameters(target, goalLineReference);
+  return getScoreMatrix(homeLambda, awayLambda);
+};
+
+const seededRandom = (seed) => {
+  let hash = 2166136261;
+  for (const character of String(seed)) {
+    hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
+  }
+  return (hash >>> 0) / 0x100000000;
+};
+
+const getCorrectScoreOdds = (oddsSeed, selection) => {
+  const randomValue = seededRandom(`${oddsSeed}:Correct_Score:${selection}`);
+  const odds = CORRECT_SCORE_ODDS_MIN
+    + randomValue * (CORRECT_SCORE_ODDS_MAX - CORRECT_SCORE_ODDS_MIN);
+  return Number(odds.toFixed(2));
+};
+
+const oddsFromProbability = (probability, seed) => {
+  const odds = 1 / (probability * MODEL_MARGIN);
+  if (!Number.isFinite(odds) || odds > MAX_GENERATED_ODDS) {
+    return Number((4 + seededRandom(seed) * (MAX_GENERATED_ODDS - 4)).toFixed(2));
+  }
+  return roundOdds(odds);
+};
+
+const generateMarketsFromScores = (
+  base1X2,
+  referenceMarkets,
+  scores,
+  { oddsSeed = '' } = {}
+) => {
+  const probabilities = marketProbabilities(scores);
+  const resultProbabilities = {
+    home: probabilities.home,
+    draw: probabilities.draw,
+    away: probabilities.away
+  };
+  const price = (probability, selection) => oddsFromProbability(
+    probability,
+    `${oddsSeed}:${selection}`
+  );
+  const result = {
+    '1X2': {
+      '1': base1X2['1'] ?? base1X2.home ?? price(resultProbabilities.home, '1X2:1'),
+      X: base1X2.X ?? base1X2.draw ?? price(resultProbabilities.draw, '1X2:X'),
+      '2': base1X2['2'] ?? base1X2.away ?? price(resultProbabilities.away, '1X2:2')
+    },
+    Double_Chance: {
+      '1X': price(resultProbabilities.home + resultProbabilities.draw, 'Double_Chance:1X'),
+      X2: price(resultProbabilities.draw + resultProbabilities.away, 'Double_Chance:X2'),
+      '12': price(resultProbabilities.home + resultProbabilities.away, 'Double_Chance:12')
+    },
+    Draw_No_Bet: {
+      '1': price(resultProbabilities.home / (resultProbabilities.home + resultProbabilities.away), 'Draw_No_Bet:1'),
+      '2': price(resultProbabilities.away / (resultProbabilities.home + resultProbabilities.away), 'Draw_No_Bet:2')
+    },
+    BTTS: {
+      Yes: price(probabilities.bttsYes, 'BTTS:Yes'),
+      No: price(1 - probabilities.bttsYes, 'BTTS:No')
+    },
+    Over_Under: {},
+    Correct_Score: {},
+    Total_Goals: {},
+    BTTS_Win: {},
+    Odd_Even: {
+      Odd: price(probabilities.odd, 'Odd_Even:Odd'),
+      Even: price(1 - probabilities.odd, 'Odd_Even:Even')
+    },
+    Clean_Sheet: {
+      Home_Yes: price(probabilities.homeCleanSheet, 'Clean_Sheet:Home_Yes'),
+      Home_No: price(1 - probabilities.homeCleanSheet, 'Clean_Sheet:Home_No'),
+      Away_Yes: price(probabilities.awayCleanSheet, 'Clean_Sheet:Away_Yes'),
+      Away_No: price(1 - probabilities.awayCleanSheet, 'Clean_Sheet:Away_No')
+    }
+  };
+
+  for (let line = 0.5; line <= 5.5; line += 1) {
+    const overProbability = probabilities.over.get(line) || 0;
+    result.Over_Under[`OVER_${line}`] = price(overProbability, `Over_Under:OVER_${line}`);
+    result.Over_Under[`UNDER_${line}`] = price(1 - overProbability, `Over_Under:UNDER_${line}`);
+  }
+
+  for (let home = 0; home <= 4; home += 1) {
+    for (let away = 0; away <= 4; away += 1) {
+      const scoreKey = `${home}-${away}`;
+      result.Correct_Score[scoreKey] = getCorrectScoreOdds(oddsSeed, scoreKey);
+    }
+  }
+  result.Correct_Score.Other = getCorrectScoreOdds(oddsSeed, 'Other');
+
+  for (let goals = 0; goals <= 5; goals += 1) {
+    result.Total_Goals[String(goals)] = price(
+      probabilities.exactGoals.get(goals) || 0,
+      `Total_Goals:${goals}`
+    );
+  }
+  result.Total_Goals['6+'] = price(
+    [...probabilities.exactGoals.entries()]
+      .filter(([goals]) => goals >= 6)
+      .reduce((sum, [, probability]) => sum + probability, 0)
+    ,
+    'Total_Goals:6+'
+  );
+
+  for (const resultKey of ['Home', 'Draw', 'Away']) {
+    for (const bttsKey of ['Yes', 'No']) {
+      const key = `${resultKey}_${bttsKey}`;
+      result.BTTS_Win[key] = price(
+        probabilities.resultAndBtts.get(key) || 0,
+        `BTTS_Win:${key}`
+      );
+    }
+  }
+
+  for (const [marketKey, selections] of Object.entries(referenceMarkets)) {
+    result[marketKey] = {
+      ...(result[marketKey] || {}),
+      ...(selections && typeof selections === 'object' ? selections : {})
+    };
+  }
+  return result;
+};
+
+const generateFullMarkets = (base1X2 = {}, referenceMarkets = {}, { oddsSeed } = {}) => {
+  const target = normalizeImpliedProbabilities(base1X2);
+  if (!target) return { ...referenceMarkets };
+
+  const scores = fitExpectedGoals(target, getGoalLineReference(referenceMarkets));
+  return generateMarketsFromScores(base1X2, referenceMarkets, scores, {
+    oddsSeed: oddsSeed || Math.random().toString(36).slice(2)
+  });
+};
+
+const generateMatchOdds = (base1X2 = {}, referenceMarkets = {}, options = {}) => (
+  generateFullMarkets(base1X2, referenceMarkets, options)
+);
 
 module.exports = {
   generatePredeterminedScript,
   generateFullMarkets,
   generateRandomBaseOdds,
   generateMatchOdds,
+  getCorrectScoreOdds,
   normalizeBaseOdds
 };

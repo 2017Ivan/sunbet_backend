@@ -87,6 +87,52 @@ const getLiveMatches = async (req, res) => {
   }
 };
 
+const getFootballApiLiveMatches = async (req, res) => {
+  try {
+    const matches = await matchService.getFootballApiLiveMatches();
+    return res.status(200).json({
+      success: true,
+      data: matches
+    });
+  } catch (error) {
+    const providerMessage = error.response?.data?.error?.message
+      || error.response?.data?.message
+      || error.message;
+    console.error(
+      `[MATCH CONTROLLER] Football API live fixtures failed (${error.response?.status || 'unknown'}):`,
+      providerMessage
+    );
+    return res.status(502).json({
+      success: false,
+      message: 'Imeshindikana kupata live matches kutoka Football API.'
+    });
+  }
+};
+
+const getFootballApiMarkets = async (req, res) => {
+  try {
+    const { externalId } = req.params;
+    const status = req.query.status === 'LIVE' ? 'LIVE' : 'UPCOMING';
+    const markets = await matchService.getFootballApiMarkets(externalId, status);
+    return res.status(200).json({
+      success: true,
+      data: markets
+    });
+  } catch (error) {
+    const providerMessage = error.response?.data?.error?.message
+      || error.response?.data?.message
+      || error.message;
+    console.error(
+      `[MATCH CONTROLLER] Football API fixture odds failed (${error.response?.status || 'unknown'}):`,
+      providerMessage
+    );
+    return res.status(502).json({
+      success: false,
+      message: 'Unable to load markets.'
+    });
+  }
+};
+
 const getMatchDetails = async (req, res) => {
   try {
     const { id } = req.params;
@@ -170,7 +216,9 @@ module.exports = {
   createMatch,
   getUpcomingMatches,
   uploadMatchesFile,
-  getLiveMatches, 
+  getLiveMatches,
+  getFootballApiLiveMatches,
+  getFootballApiMarkets,
   getMatchDetails,
   updateMatchOdds,
   createMultipleMatches,

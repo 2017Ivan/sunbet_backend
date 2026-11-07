@@ -1,6 +1,14 @@
 // src/services/bet/ByteLengthQueuingStrategy.service.js 
 
 const { sequelize } = require('../../models');
+const { getMarketSelectionOdds } = require('../../utils/marketArray.util');
+const {
+  getCurrentMatchMarkets,
+  getMatchElapsedMinute,
+  getKickoffTime,
+  isLiveSelectionLocked,
+  isCorrectScoreOutcomeImpossible
+} = require('../../utils/matchPricing.util');
 const userRepository = require('../../repositories/user/user.repository');
 const matchRepository = require('../../repositories/match/match.repository');
 const betRepository = require('../../repositories/bet/bet.repository');
@@ -158,16 +166,38 @@ const placeBet = async (userId, { stake, selections, placed_via = 'DIRECT', book
         throw new Error(`Mechi yenye ID ${sel.match_id} haijapatikana.`);
       }
 
-      if (match.status !== 'UPCOMING') {
+      const isLiveMatch = match.status === 'LIVE';
+      if (match.status !== 'UPCOMING' && !isLiveMatch) {
         throw new Error(`Mechi kati ya ${match.home_team} vs ${match.away_team} imeshaanza au kumalizika.`);
       }
 
-      const marketOdds = match.odds?.[sel.market_key];
-      if (!marketOdds || marketOdds[sel.outcome_key] === undefined) {
-        throw new Error(`Soko la ${sel.market_key} - ${sel.outcome_key} halipatikani kwenye mechi hii.`);
+      if (match.status === 'UPCOMING') {
+        const kickoff = getKickoffTime(match);
+        if (kickoff && kickoff.getTime() <= Date.now()) {
+          throw new Error(`Mechi kati ya ${match.home_team} vs ${match.away_team} imeanza; chagua live market inayopatikana.`);
+        }
       }
 
-      const currentOdds = parseFloat(marketOdds[sel.outcome_key]);
+      const elapsedMinute = isLiveMatch ? getMatchElapsedMinute(match) : undefined;
+      if (isCorrectScoreOutcomeImpossible(match, sel.market_key, sel.outcome_key)) {
+        throw new Error('This correct score is no longer available.');
+      }
+
+      const currentMarkets = getCurrentMatchMarkets(match, { elapsedMinute });
+      const currentOdds = parseFloat(getMarketSelectionOdds(
+        currentMarkets,
+        sel.market_key,
+        sel.outcome_key,
+        match.home_team,
+        match.away_team
+      ));
+      if (!Number.isFinite(currentOdds) || currentOdds <= 1) {
+        throw new Error(`Soko la ${sel.market_key} - ${sel.outcome_key} halipatikani kwenye mechi hii.`);
+      }
+      if (isLiveSelectionLocked(match, sel.market_key, currentOdds, elapsedMinute)) {
+        throw new Error('Soko hili limefungwa kuanzia dakika ya 85 ya mechi.');
+      }
+
       calculatedTotalOdds *= currentOdds;
 
       validatedSelections.push({

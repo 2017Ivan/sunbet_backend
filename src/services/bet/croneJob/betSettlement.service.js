@@ -36,6 +36,12 @@ const evaluateSelection = (selection, match) => {
       if (outcome_key === '12') return ftHome !== ftAway;
       break;
 
+    case 'Draw_No_Bet':
+      if (ftHome === ftAway) return null;
+      if (outcome_key === '1') return ftHome > ftAway;
+      if (outcome_key === '2') return ftAway > ftHome;
+      break;
+
     // 3. Both Teams to Score (BTTS)
     case 'BTTS':
       if (outcome_key === 'Yes') return ftHome > 0 && ftAway > 0;
@@ -55,11 +61,14 @@ const evaluateSelection = (selection, match) => {
     // 5. Correct Score
     case 'Correct_Score': {
       if (outcome_key === 'Other') {
-        const standardScores = [
-          '0-0', '1-0', '0-1', '1-1', '2-0', '0-2',
-          '2-1', '1-2', '2-2', '3-0', '0-3', '3-1',
-          '1-3', '3-2', '2-3'
-        ];
+        const marketSelections = match.markets?.find(
+          (market) => market.market === 'Correct Score | Full Time'
+        )?.selections;
+        const standardScores = Array.isArray(marketSelections)
+          ? marketSelections.filter((item) => item.name !== 'Other').map((item) => item.name)
+          : Array.from({ length: 5 }, (_, home) => (
+            Array.from({ length: 5 }, (_, away) => `${home}-${away}`)
+          )).flat();
         return !standardScores.includes(`${ftHome}-${ftAway}`);
       }
       return `${ftHome}-${ftAway}` === outcome_key;
@@ -96,6 +105,7 @@ const evaluateSelection = (selection, match) => {
       if (outcome_key === 'Away_Yes') return ftAway > ftHome && bttsYes;
       if (outcome_key === 'Away_No') return ftAway > ftHome && bttsNo;
       if (outcome_key === 'Draw_Yes') return ftHome === ftAway && bttsYes;
+      if (outcome_key === 'Draw_No') return ftHome === ftAway && bttsNo;
       break;
     }
 
@@ -108,6 +118,7 @@ const evaluateSelection = (selection, match) => {
     // 10. Total Exact Goals
     case 'Total_Goals':
       if (outcome_key === '5+') return totalGoals >= 5;
+      if (outcome_key === '6+') return totalGoals >= 6;
       return totalGoals === parseInt(outcome_key, 10);
 
     // 11. Goals In Both Halves
@@ -149,6 +160,10 @@ const evaluateSelection = (selection, match) => {
 
     // 14. Clean Sheet
     case 'Clean_Sheet':
+      if (outcome_key === 'Home_Yes') return ftAway === 0;
+      if (outcome_key === 'Home_No') return ftAway > 0;
+      if (outcome_key === 'Away_Yes') return ftHome === 0;
+      if (outcome_key === 'Away_No') return ftHome > 0;
       if (outcome_key === 'Home') return ftAway === 0;
       if (outcome_key === 'Away') return ftHome === 0;
       if (outcome_key === 'Both') return ftHome === 0 && ftAway === 0;
@@ -185,7 +200,10 @@ const checkAllSelectionsWon = (bet) => {
   if (selections.length === 0) return false;
 
   for (const sel of selections) {
-    if (sel.status !== 'WON') {
+    const isDrawNoBetVoid = sel.status === 'CANCELLED'
+      && sel.market_key === 'Draw_No_Bet'
+      && sel.match?.status === 'FINISHED';
+    if (sel.status !== 'WON' && !isDrawNoBetVoid) {
       return false;
     }
   }
@@ -210,6 +228,30 @@ const markBetSettled = async (bet, result, transaction) => {
     status: 'SETTLED',
     result
   }, { transaction });
+};
+
+const recalculatePayoutAfterVoid = async (bet, transaction) => {
+  const selections = bet.selections || [];
+  const totalOdds = selections.reduce((total, selection) => {
+    const isDrawNoBetVoid = selection.status === 'CANCELLED'
+      && selection.market_key === 'Draw_No_Bet'
+      && selection.match?.status === 'FINISHED';
+    return total * (isDrawNoBetVoid ? 1 : Number(selection.odds_at_placement));
+  }, 1);
+  const roundedTotalOdds = Number(totalOdds.toFixed(2));
+  const stake = Number(bet.stake);
+  const possibleWin = stake * (roundedTotalOdds - 1);
+  const tax = possibleWin * 0.12;
+  const payout = Number((stake + possibleWin - tax).toFixed(2));
+
+  await bet.update({
+    total_odds: roundedTotalOdds.toFixed(2),
+    possible_win: possibleWin.toFixed(2),
+    tax: tax.toFixed(2),
+    payout: payout.toFixed(2)
+  }, { transaction });
+
+  return payout;
 };
 
 // ============ PER-BET SETTLEMENT (kunyumba kwa BET moja) ============
@@ -240,11 +282,14 @@ const settleBetIfEligible = async (bet) => {
       console.log(`[SETTLEMENT] 🔍 Selection: ${sel.market_key} - ${sel.outcome_key} | Match: ${match.status}`);
 
       if (match.status === 'FINISHED') {
-        const isWon = evaluateSelection(sel, match);
-        const newStatus = isWon ? 'WON' : 'LOST';
+        const result = evaluateSelection(sel, match);
+        const newStatus = result === null ? 'CANCELLED' : result ? 'WON' : 'LOST';
 
-        console.log(`[SETTLEMENT] ${isWon ? '✅' : '❌'} Selection -> ${newStatus}`);
-        await sel.update({ status: newStatus }, { transaction });
+        console.log(`[SETTLEMENT] ${result === null ? '↩️' : result ? '✅' : '❌'} Selection -> ${newStatus}`);
+        await sel.update({
+          status: newStatus,
+          ...(result === null ? { odds_at_placement: 1 } : {})
+        }, { transaction });
       } else if (match.status === 'CANCELLED') {
         await sel.update({ status: 'CANCELLED' }, { transaction });
       }
@@ -267,9 +312,17 @@ const settleBetIfEligible = async (bet) => {
 
       if (allSelectionsWon) {
         console.log(`[SETTLEMENT] ✅ Bet ${bet.ticket_code} WON -> SETTLED`);
+        const hasDrawNoBetVoid = selections.some((selection) => (
+          selection.status === 'CANCELLED'
+          && selection.market_key === 'Draw_No_Bet'
+          && selection.match?.status === 'FINISHED'
+        ));
+        const payout = hasDrawNoBetVoid
+          ? await recalculatePayoutAfterVoid(bet, transaction)
+          : parseFloat(bet.payout);
         await markBetSettled(bet, 'WON', transaction);
 
-        const payoutAmount = parseFloat(bet.payout);
+        const payoutAmount = payout;
         if (payoutAmount > 0) {
           console.log(`[SETTLEMENT] 💰 Paying ${payoutAmount} to user ${bet.user_id}`);
           await userRepository.deposit(bet.user_id, payoutAmount, transaction);

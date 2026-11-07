@@ -6,6 +6,8 @@ const matchController = require('../../controllers/match/match.controller');
 // Public endpoints
 router.get('/upcoming', matchController.getUpcomingMatches);
 router.get('/live', matchController.getLiveMatches); 
+router.get('/football-api/live', matchController.getFootballApiLiveMatches);
+router.get('/football-api/:externalId/markets', matchController.getFootballApiMarkets);
 router.get('/:id', matchController.getMatchDetails);
 
 // Management / Administrative endpoints

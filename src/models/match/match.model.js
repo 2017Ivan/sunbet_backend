@@ -15,6 +15,16 @@ const Match = sequelize.define('Match', {
     allowNull: false,
     unique: true,
   },
+  source: {
+    type: DataTypes.STRING(20),
+    allowNull: false,
+    defaultValue: 'ADMIN',
+  },
+  external_id: {
+    type: DataTypes.STRING(80),
+    allowNull: true,
+    unique: true,
+  },
   home_team: {
     type: DataTypes.STRING,
     allowNull: false,
@@ -36,7 +46,7 @@ const Match = sequelize.define('Match', {
     allowNull: false,
   },
   status: {
-    type: DataTypes.ENUM('UPCOMING', 'LIVE', 'FINISHED', 'CANCELLED'),
+    type: DataTypes.ENUM('UPCOMING', 'LIVE', 'FINISHED', 'CANCELLED', 'UNKNOWN'),
     allowNull: false,
     defaultValue: 'UPCOMING',
   },
@@ -44,9 +54,13 @@ const Match = sequelize.define('Match', {
     type: DataTypes.JSON,
     allowNull: false,
   },
+  markets: {
+    type: DataTypes.JSON,
+    allowNull: true,
+  },
   predetermined_script: {
     type: DataTypes.JSON,
-    allowNull: false,
+    allowNull: true,
   },
   current_score: {
     type: DataTypes.JSON,
@@ -58,6 +72,8 @@ const Match = sequelize.define('Match', {
   timestamps: true,
   indexes: [
     { unique: true, fields: ['match_code'] },
+    { unique: true, fields: ['external_id'] },
+    { fields: ['source', 'status'] },
     { fields: ['status'] },
     { fields: ['date'] }
   ]
