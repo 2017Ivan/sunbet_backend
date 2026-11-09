@@ -72,9 +72,11 @@ const enrichMatchWithLiveState = (match) => {
       return minuteNum <= elapsedMinutes;
     });
 
-    const calculatedScore = pastEvents.length > 0
-      ? pastEvents[pastEvents.length - 1].current_score
-      : { home: 0, away: 0 };
+    const calculatedScore = timeline.length > 0
+      ? pastEvents.length > 0
+        ? pastEvents[pastEvents.length - 1].current_score
+        : { home: 0, away: 0 }
+      : matchJson.current_score || { home: 0, away: 0 };
 
     const { predetermined_script, ...rest } = matchJson;
 
@@ -195,7 +197,7 @@ const placeBet = async (userId, { stake, selections, placed_via = 'DIRECT', book
         throw new Error(`Soko la ${sel.market_key} - ${sel.outcome_key} halipatikani kwenye mechi hii.`);
       }
       if (isLiveSelectionLocked(match, sel.market_key, currentOdds, elapsedMinute)) {
-        throw new Error('Soko hili limefungwa kuanzia dakika ya 85 ya mechi.');
+        throw new Error('Soko hili limefungwa kwa dakika za mwisho za mechi.');
       }
 
       calculatedTotalOdds *= currentOdds;

@@ -9,18 +9,23 @@ const API_MATCH_SOURCE = 'FOOTBALL_API';
 const FIXTURE_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const FIXTURE_RETRY_INTERVAL_MS = 30 * 60 * 1000;
 const FIXTURE_LOOKAHEAD_DAYS = 7;
-const LIVE_SYNC_CRON = '*/5 * * * *';
-const LIVE_CACHE_TTL_MS = 5 * 60 * 1000;
+const LIVE_SYNC_CRON = '* * * * *';
+const LIVE_CACHE_TTL_MS = 60 * 1000;
+const FIXTURE_STATUS_RECHECK_INTERVAL_MS = 60 * 1000;
+const MAX_FIXTURE_STATUS_CHECKS_PER_SYNC = 4;
 const FIXTURE_ODDS_CACHE_TTL_MS = 10 * 60 * 1000;
 
 let syncInProgress = false;
 let nextFixtureSyncAt = 0;
+let lastScheduledSyncHadFixtures = false;
+let socketServer = null;
 let cachedLiveFixtures = null;
 let cachedLiveFixturesAt = 0;
 let liveFixturesRequest = null;
 let fixtureOddsIncludeAvailable = null;
 const fixtureOddsCache = new Map();
 const fixtureOddsRequests = new Map();
+const fixtureStatusCheckTimes = new Map();
 
 const formatKickoff = (fixture) => {
   const rawKickoff = fixture.kickoff_utc || fixture.date;
@@ -282,7 +287,19 @@ const saveMatch = async (matchData) => {
         odds: existing.odds,
         markets: existing.markets
       };
+    const wasLive = existing.status === 'LIVE';
     await existing.update(updateData);
+
+    if (wasLive && matchData.status === 'FINISHED' && socketServer) {
+      const score = matchData.current_score || existing.current_score || {};
+      socketServer.emit('match_finished', {
+        match_id: existing.id,
+        final_score: {
+          homeScore: Number(score.home ?? score.homeScore ?? 0),
+          awayScore: Number(score.away ?? score.awayScore ?? 0)
+        }
+      });
+    }
   } else {
     await Match.create(matchData);
   }
@@ -303,11 +320,11 @@ const saveFixtures = async (fixtures) => {
   return saved;
 };
 
-const getLiveFixtures = async () => {
+const getLiveFixtures = async ({ forceRefresh = false } = {}) => {
   if (!process.env.FOOTBALL_API_KEY) {
     throw new Error('FOOTBALL_API_KEY is not configured');
   }
-  if (cachedLiveFixtures && Date.now() - cachedLiveFixturesAt < LIVE_CACHE_TTL_MS) {
+  if (!forceRefresh && cachedLiveFixtures && Date.now() - cachedLiveFixturesAt < LIVE_CACHE_TTL_MS) {
     return cachedLiveFixtures;
   }
   if (liveFixturesRequest) return liveFixturesRequest;
@@ -434,6 +451,7 @@ const syncScheduledFixtures = async () => {
   const utcToday = new Date();
   utcToday.setUTCHours(0, 0, 0, 0);
   let succeeded = true;
+  let savedFixtures = 0;
 
   for (let day = 0; day < FIXTURE_LOOKAHEAD_DAYS; day += 1) {
     const startTime = Math.floor((utcToday.getTime() + day * 24 * 60 * 60 * 1000) / 1000);
@@ -445,6 +463,7 @@ const syncScheduledFixtures = async () => {
         status: 'all'
       });
       const saved = await saveFixtures(fixtures);
+      savedFixtures += saved;
       console.log(`[FOOTBALL API] Synced ${saved} fixtures for UTC day ${day + 1}/${FIXTURE_LOOKAHEAD_DAYS}`);
     } catch (error) {
       succeeded = false;
@@ -452,12 +471,65 @@ const syncScheduledFixtures = async () => {
     }
   }
 
-  return succeeded;
+  return { succeeded, saved: savedFixtures };
 };
 
 const syncLiveFixtures = async () => {
-  const fixtures = await getLiveFixtures();
-  console.log(`[FOOTBALL API] Synced ${fixtures.length} live fixtures`);
+  const fixtures = await getLiveFixtures({ forceRefresh: true });
+  const liveIds = new Set(fixtures.map((fixture) => String(fixture.external_id)));
+  const storedLiveFixtures = await Match.findAll({
+    where: { source: API_MATCH_SOURCE, status: 'LIVE' },
+    attributes: ['id', 'external_id']
+  });
+  for (const fixture of storedLiveFixtures) {
+    const externalId = String(fixture.external_id);
+    if (liveIds.has(externalId)) {
+      fixtureStatusCheckTimes.delete(externalId);
+    }
+  }
+
+  const fixturesToVerify = storedLiveFixtures
+    .filter((fixture) => !liveIds.has(String(fixture.external_id)))
+    .sort((first, second) => (
+      (fixtureStatusCheckTimes.get(String(first.external_id)) || 0)
+      - (fixtureStatusCheckTimes.get(String(second.external_id)) || 0)
+    ));
+  let finished = 0;
+  let checked = 0;
+
+  for (const fixture of fixturesToVerify) {
+    const externalId = String(fixture.external_id);
+    const lastCheckedAt = fixtureStatusCheckTimes.get(externalId) || 0;
+    if (checked >= MAX_FIXTURE_STATUS_CHECKS_PER_SYNC
+      || Date.now() - lastCheckedAt < FIXTURE_STATUS_RECHECK_INTERVAL_MS) {
+      continue;
+    }
+
+    fixtureStatusCheckTimes.set(externalId, Date.now());
+    checked += 1;
+
+    try {
+      const response = await axios.get(`${API_BASE_URL}/fixtures/${encodeURIComponent(externalId)}`, {
+        headers: { 'X-API-Key': process.env.FOOTBALL_API_KEY },
+        timeout: 15000
+      });
+      const payload = response.data;
+      if (payload?.success !== 1 || !payload.data) {
+        throw new Error(payload?.error?.message || 'Football API returned an invalid fixture response');
+      }
+
+      const match = normalizeFixture(payload.data);
+      if (match.status !== 'FINISHED') continue;
+
+      await saveMatch(match);
+      fixtureStatusCheckTimes.delete(externalId);
+      finished += 1;
+    } catch (error) {
+      console.error(`[FOOTBALL API] Could not verify fixture ${externalId} final status: ${error.message}`);
+    }
+  }
+
+  console.log(`[FOOTBALL API] Synced ${fixtures.length} live fixtures; verified ${finished} finished fixtures`);
 };
 
 const syncFootballFixtures = async () => {
@@ -465,9 +537,21 @@ const syncFootballFixtures = async () => {
   syncInProgress = true;
 
   try {
-    if (Date.now() >= nextFixtureSyncAt) {
-      const succeeded = await syncScheduledFixtures();
-      nextFixtureSyncAt = Date.now() + (succeeded ? FIXTURE_SYNC_INTERVAL_MS : FIXTURE_RETRY_INTERVAL_MS);
+    const storedFixtureCount = await Match.count({
+      where: { source: API_MATCH_SOURCE }
+    });
+    const fixturesWereDeleted = lastScheduledSyncHadFixtures && storedFixtureCount === 0;
+
+    if (Date.now() >= nextFixtureSyncAt || fixturesWereDeleted) {
+      if (fixturesWereDeleted) {
+        console.warn('[FOOTBALL API] Stored fixtures are missing; refreshing scheduled fixtures');
+      }
+
+      const { succeeded, saved } = await syncScheduledFixtures();
+      lastScheduledSyncHadFixtures = saved > 0;
+      nextFixtureSyncAt = Date.now() + (
+        succeeded && saved > 0 ? FIXTURE_SYNC_INTERVAL_MS : FIXTURE_RETRY_INTERVAL_MS
+      );
     }
     await syncLiveFixtures();
   } catch (error) {
@@ -477,7 +561,9 @@ const syncFootballFixtures = async () => {
   }
 };
 
-const startFootballApiSync = () => {
+const startFootballApiSync = (io = null) => {
+  socketServer = io;
+
   if (!process.env.FOOTBALL_API_KEY) {
     console.warn('[FOOTBALL API] FOOTBALL_API_KEY is not configured; external fixture sync is disabled');
     return;

@@ -5,6 +5,7 @@ const PREMATCH_REPRICE_MINUTES = 30;
 const PREMATCH_MAX_REDUCTION = 0.05;
 const LIVE_MAX_REDUCTION = 0.05;
 const LIVE_MARKET_LOCK_MINUTE = 85;
+const ALL_LIVE_MARKETS_LOCK_MINUTE = 90;
 const GENERATED_ODDS_MAX = 15;
 const GENERATED_ODDS_RANDOM_MIN = 4;
 const LATE_LOCKED_MARKETS = new Set([
@@ -127,8 +128,10 @@ const isLiveSelectionLocked = (match, marketKey, odds, elapsedMinute) => {
   if (['FINISHED', 'CANCELLED'].includes(match.status)) return true;
   if (match.status !== 'LIVE') return false;
 
-  const minute = elapsedMinute ?? getMatchElapsedMinute(match);
-  if (minute === null || minute === undefined || !Number.isFinite(Number(minute))) return true;
+  const minuteValue = elapsedMinute ?? getMatchElapsedMinute(match);
+  if (minuteValue === null || minuteValue === undefined || !Number.isFinite(Number(minuteValue))) return true;
+  const minute = Number(minuteValue);
+  if (minute >= ALL_LIVE_MARKETS_LOCK_MINUTE) return true;
   if (minute < LIVE_MARKET_LOCK_MINUTE) return false;
   return LATE_LOCKED_MARKETS.has(marketKey) || Number(odds) <= 1.15;
 };

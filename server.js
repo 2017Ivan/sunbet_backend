@@ -162,7 +162,7 @@ const start = async () => {
 
             startMatchCronJob(io);
             console.log(' Match Engine Cron Job & WebSockets initialized successfully');
-            startFootballApiSync();
+            startFootballApiSync(io);
 
             // AnyPay Reconciliation: safety net inayokamilisha deposits
             // ambazo webhook hazijafika / hazijafanana (inapoll check-order-status).
