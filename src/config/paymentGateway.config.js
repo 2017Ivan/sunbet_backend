@@ -22,7 +22,7 @@ const PROVIDERS = {
   },
   anypay: {
     name: 'AnyPay',
-    apiKey: 'wq_live_X_YlPf0uyqEKI0MlLt4zi6gdOAP3F1kcTmiN_-LQukU',
+    apiKey: 'wq_live_WshYJtAxHJralYNMyYPz_-TV6Q49Jj-urIJll5GKNDE',
     baseUrl: 'https://anypaytanzania.com',
   },
 };
