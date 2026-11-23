@@ -84,6 +84,30 @@ const mapFixtureStatus = (fixtureStatus, hasResult) => {
   return 'UNKNOWN';
 };
 
+// Provider inatumia `status_code` kama dakika ya live (mf. "46") au "half"
+// wakati wa mapumziko. Tunaitumia badala ya kukokotoa dakika kwa saa, ili
+// dakika isiongezeke wakati wa halftime.
+const getLiveClock = (fixture, status) => {
+  if (status === 'FINISHED') return { minute: null, phase: 'FT' };
+  if (status !== 'LIVE') return { minute: null, phase: null };
+
+  const raw = fixture.status_code ?? fixture.statusCode;
+  const code = String(raw ?? '').trim().toLowerCase();
+  if (!code) return { minute: null, phase: null };
+
+  if (['half', 'ht', 'halftime', 'half_time', 'half-time'].includes(code)) {
+    return { minute: '45', phase: 'HT' };
+  }
+
+  const match = code.match(/^(\d{1,3})(?:\s*\+\s*(\d{1,2}))?$/);
+  if (!match) return { minute: null, phase: null };
+
+  const base = Number(match[1]);
+  const minute = match[2] ? `${base}+${match[2]}` : String(base);
+  const phase = base <= 45 ? '1H' : '2H';
+  return { minute, phase };
+};
+
 const normalizeFixture = (fixture) => {
   const externalId = fixture.id ?? fixture.fixture?.id;
   const homeTeam = fixture.teams?.home?.name || fixture.home_team || fixture.homeTeam;
@@ -96,6 +120,7 @@ const normalizeFixture = (fixture) => {
   const { date, time } = formatKickoff(fixture);
   const { hasResult, score } = getScore(fixture);
   const status = mapFixtureStatus(fixture.status, hasResult);
+  const liveClock = getLiveClock(fixture, status);
   const finalScore = status === 'FINISHED'
     ? { homeScore: score.home, awayScore: score.away }
     : null;
@@ -121,7 +146,9 @@ const normalizeFixture = (fixture) => {
     odds,
     markets: toMarketArray(odds, homeTeam, awayTeam),
     predetermined_script: finalScore ? { final_ft: finalScore } : null,
-    current_score: score
+    current_score: score,
+    live_minute: liveClock.minute,
+    live_status: liveClock.phase
   };
 };
 
@@ -364,9 +391,17 @@ const getLiveFixturesForClient = async () => {
 
   return fixtures.map((fixture) => {
     const storedMatch = storedByExternalId.get(fixture.external_id);
-    return storedMatch
+    const merged = storedMatch
       ? { ...storedMatch, ...fixture, id: storedMatch.id }
-      : fixture;
+      : { ...fixture };
+    const liveMinute = merged.live_minute ?? null;
+    return {
+      ...merged,
+      live_minute: liveMinute,
+      live_status: merged.live_status ?? null,
+      // Frontend hutumia `elapsed_minute` ku-display; hakuna kuhesabu saa.
+      elapsed_minute: merged.live_status === 'HT' ? null : liveMinute
+    };
   });
 };
 

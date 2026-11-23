@@ -11,9 +11,14 @@ router.post('/palmpesa-webhook', moneyController.palmPesaWebhook);
 router.post('/snippe-webhook', moneyController.snipeWebhook);
 router.post('/snipe-webhook', moneyController.snipeWebhook);
 router.post('/anypay-webhook', moneyController.anyPayWebhook);
+// DaliPay hutuma collection.success / collection.failed (X-Signature HMAC).
+router.post('/dalipay-webhook', moneyController.dalipayWebhook);
 
 // ============ ANYPAY RECONCILIATION (admin, kulazimisha sweep) ============
 router.post('/anypay/reconcile', authenticate, authorize(['ADMIN']), moneyController.anyPayReconcile);
+
+// ============ DALIPAY RECONCILIATION (admin, kulazimisha sweep) ============
+router.post('/dalipay/reconcile', authenticate, authorize(['ADMIN']), moneyController.dalipayReconcile);
 
 // ============ UNIFIED DEPOSIT (routes to active gateway: PalmPesa/Snipe/AnyPay) ============
 router.post('/deposit', authenticate, moneyController.deposit);

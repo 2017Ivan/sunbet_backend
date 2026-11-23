@@ -76,7 +76,17 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '100mb', extended: true }));
+app.use(
+    express.json({
+        limit: '100mb',
+        extended: true,
+        // Keep the raw body so webhooks (e.g. DaliPay X-Signature HMAC) can be
+        // verified against the exact bytes that were sent.
+        verify: (req, res, buf) => {
+            req.rawBody = buf;
+        }
+    })
+);
 
 /* =========================
    SOCKET.IO CONFIGURATION
@@ -168,6 +178,11 @@ const start = async () => {
             // ambazo webhook hazijafika / hazijafanana (inapoll check-order-status).
             moneyService.startAnyPayReconciliation();
             console.log(' AnyPay reconciliation cron started');
+
+            // DaliPay Reconciliation: inapoll /collections/{uuid}/status kila
+            // dakika ili deposits zilizokamilika zi-credit hata webhook isipofika.
+            moneyService.startDalipayReconciliation();
+            console.log(' DaliPay reconciliation cron started');
         });
 
     } catch (error) {

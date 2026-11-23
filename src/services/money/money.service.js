@@ -31,6 +31,7 @@ const crypto = require('crypto');
 const cron = require('node-cron');
 
 // ============ PROVIDER CONFIGURATION (keys zote pamoja) ============
+const DALIPAY = getProvider('dalipay');
 const PALMPESA = getProvider('palmpesa');
 const SNIPPE = getProvider('snipe');
 const ANYPAY = getProvider('anypay');
@@ -122,6 +123,11 @@ if (!global.anypayTransactions) {
   global.anypayTransactions = new Map();
 }
 
+// In-memory store of pending DaliPay collections keyed by our transaction_id.
+if (!global.dalipayTransactions) {
+  global.dalipayTransactions = new Map();
+}
+
 // Random email domain for Snipe payer profiles (kept unique per request).
 const EMAIL_DOMAINS = ['gmail.com', 'yahoo.com', 'outlook.com', 'icloud.com'];
 
@@ -182,6 +188,29 @@ function convertToInternationalFormat(phone) {
     return '255' + cleaned.substring(1);
   }
   return '255' + cleaned;
+}
+
+// DaliPay requires an explicit mobile network (provider). Gawa mtandao kutoka
+// kwenye prefix ya namba ya simu ya Tanzania, kisha rudisha jina sahihi la
+// DaliPay. Kama request inaleta `provider` tayari, hiyo ndiyo inatumika.
+const DALIPAY_PROVIDERS = ['Airtel', 'Tigo', 'Azampesa', 'Halopesa', 'Mpesa'];
+
+function normalizeDalipayProvider(provider) {
+  const match = DALIPAY_PROVIDERS.find(
+    (p) => p.toLowerCase() === String(provider || '').trim().toLowerCase()
+  );
+  return match || null;
+}
+
+function detectDalipayProvider(phone) {
+  const local = convertToLocalFormat(phone);
+  const pair = local.substring(1, 3); // e.g. '07' + '54' -> '75'
+  if (['74', '75', '76'].includes(pair)) return 'Mpesa';
+  if (['68', '69', '78', '79'].includes(pair)) return 'Airtel';
+  if (['65', '67', '71', '77'].includes(pair)) return 'Tigo';
+  if (['61', '62'].includes(pair)) return 'Halopesa';
+  if (['66'].includes(pair)) return 'Azampesa';
+  return 'Tigo';
 }
 
 // Credit the user's balance (dedicated method so PalmPesa + manual share logic).
@@ -1297,11 +1326,521 @@ const runAnyPayReconciliation = async () => {
   });
 };
 
+// ============ DEPOSIT (DALIPAY) ============
+
+// Credit balance for a confirmed DaliPay collection (reuses creditBalance so
+// deposit_requests is auto-confirmed + history is kept).
+async function processSuccessfulDalipay(transaction, transactionKey, paymentData) {
+  if (transaction.status === 'completed') return transaction;
+
+  const amount = Number(paymentData.amount) || transaction.amount;
+  const bonusAmount = amount >= 150000 ? 10000 : 0;
+
+  const result = await creditBalance({
+    user_id: transaction.user_id,
+    amount,
+    bonusAmount,
+    reference: generateReference('DEP'),
+    description:
+      bonusAmount > 0
+        ? `Deposit TZS ${amount} + bonus TZS ${bonusAmount}`
+        : `Deposit TZS ${amount}`,
+    depositRequestId: transaction.deposit_request_id || null,
+  });
+
+  transaction.status = 'completed';
+  transaction.balance_added = true;
+  transaction.new_balance = result.user.balance;
+  transaction.completed_at = new Date().toISOString();
+  if (paymentData.reference) transaction.dalipay_reference = paymentData.reference;
+  if (paymentData.uuid) transaction.dalipay_uuid = paymentData.uuid;
+  global.dalipayTransactions.set(transactionKey, transaction);
+
+  console.log(`✅ DaliPay balance updated: +${amount} TZS for user ${transaction.user_id}`);
+  console.log(`💰 New balance: ${result.user.balance}`);
+
+  await notifyUser(transaction.user_phone, {
+    title: 'Payment Received',
+    message:
+      bonusAmount > 0
+        ? `Your deposit of TSh ${formatMoney(amount)} was received successfully plus bonus TZS ${formatMoney(bonusAmount)}. New balance: ${formatMoney(result.user.balance)}`
+        : `Your deposit of TSh ${formatMoney(amount)} was received successfully. New balance: ${formatMoney(result.user.balance)}`,
+    type: 'success',
+    metadata: {
+      type: 'deposit_received',
+      deposit_request_id: result.depositRequest.id,
+      amount,
+      balance: result.user.balance,
+    },
+  });
+
+  return transaction;
+}
+
+// POST /api/money/deposit/dalipay - initiate a DaliPay collection (USSD push).
+const depositViaDalipay = async ({ user_id, amount, phone_number, provider }) => {
+  const amountNum = Number(amount);
+  if (!amountNum || amountNum < 500) {
+    throw new CustomExceptions('Amount must be at least 500 TZS', 400);
+  }
+  if (!phone_number) {
+    throw new CustomExceptions('Phone number is required', 400);
+  }
+
+  if (!DALIPAY.publicKey || !DALIPAY.secretKey) {
+    throw new CustomExceptions(
+      'DaliPay API keys hazijawekwa. Msimamizi aweke keys kwanza kwenye admin panel.',
+      500
+    );
+  }
+
+  const user = await userRepository.findById(user_id);
+  if (!user) throw new CustomExceptions('User not found', 404);
+
+  const transactionId = generateTransactionId();
+  const localPhone = convertToLocalFormat(phone_number);
+  const dalipayProvider =
+    normalizeDalipayProvider(provider) || detectDalipayProvider(phone_number);
+
+  const requestData = {
+    account_number: localPhone,
+    amount: amountNum,
+    currency: 'TZS',
+    provider: dalipayProvider,
+    external_id: transactionId,
+  };
+
+  console.log('📤 DaliPay Deposit Request:', JSON.stringify(requestData, null, 2));
+
+  let result;
+  try {
+    const response = await axios.post(`${DALIPAY.baseUrl}/collections`, requestData, {
+      headers: {
+        'X-Public-Key': DALIPAY.publicKey,
+        'X-Secret-Key': DALIPAY.secretKey,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      timeout: 30000,
+    });
+    result = response.data;
+  } catch (error) {
+    console.error('❌ DaliPay deposit error:', error.message);
+    let errorMessage = 'Failed to initiate payment';
+    if (error.response?.data) {
+      console.error('DaliPay Error:', JSON.stringify(error.response.data, null, 2));
+      errorMessage = error.response.data.message || error.response.data.error || errorMessage;
+    }
+    throw new CustomExceptions(errorMessage, 500);
+  }
+
+  console.log('✅ DaliPay Response:', JSON.stringify(result, null, 2));
+
+  if (!result.success || !result.data) {
+    throw new CustomExceptions(result.message || 'Failed to initiate payment', 500);
+  }
+
+  const paymentData = result.data;
+  const dalipayUuid = paymentData.uuid;
+  const dalipayReference = paymentData.reference;
+
+  // Keep a PENDING deposit request for history (auto-confirmed on payment).
+  let depositRequest = null;
+  try {
+    depositRequest = await DepositRequest.create({
+      user_id,
+      amount: amountNum,
+      payer_phone: localPhone,
+      status: 'PENDING',
+      note: `DaliPay auto payment | uuid=${dalipayUuid || ''} | ext=${transactionId} | provider=${dalipayProvider}`,
+    });
+  } catch (err) {
+    console.error('Failed to create deposit request record:', err.message);
+  }
+
+  global.dalipayTransactions.set(transactionId, {
+    user_id,
+    user_phone: user.phone_number,
+    amount: amountNum,
+    phone: localPhone,
+    provider: dalipayProvider,
+    status: 'pending',
+    dalipay_uuid: dalipayUuid || null,
+    dalipay_reference: dalipayReference || null,
+    deposit_request_id: depositRequest ? depositRequest.id : null,
+    created_at: new Date().toISOString(),
+  });
+
+  await notifyUser(user.phone_number, {
+    title: 'Deposit Request Sent',
+    message: `Your request to fund TSh ${formatMoney(amountNum)} was received. Check your phone for the prompt to enter your PIN.`,
+    type: 'info',
+    metadata: {
+      type: 'deposit_request',
+      deposit_request_id: depositRequest ? depositRequest.id : null,
+      transaction_id: transactionId,
+      amount: amountNum,
+      status: 'PENDING',
+    },
+  });
+
+  await notifyAllAdmins({
+    title: 'New Deposit',
+    message: `Deposit of TSh ${formatMoney(amountNum)} from ${user.phone_number} — auto-credited once paid.`,
+    type: 'alert',
+    metadata: {
+      type: 'deposit_request',
+      deposit_request_id: depositRequest ? depositRequest.id : null,
+      amount: amountNum,
+      payer_phone: user.phone_number,
+      status: 'PENDING',
+    },
+  });
+
+  return responseBuilder.success({
+    status: 200,
+    message: 'Payment initiated. Check your phone for the mobile money prompt.',
+    data: {
+      gateway: 'dalipay',
+      transaction_id: transactionId,
+      dalipay_uuid: dalipayUuid || null,
+      reference: dalipayReference || null,
+      amount: amountNum,
+      phone: localPhone,
+      provider: dalipayProvider,
+      status: 'pending',
+    },
+  });
+};
+
+// POST /api/money/dalipay-webhook  (PUBLIC, no auth)
+// DaliPay hutuma collection.success / collection.failed. Ukishaweka
+// callbackSecret kwenye admin panel, signature ya X-Signature inathibitishwa.
+const dalipayWebhook = async (rawBody, signature) => {
+  const body = typeof rawBody === 'string' ? JSON.parse(rawBody || '{}') : (rawBody || {});
+  console.log('🔥 DaliPay Webhook received:', JSON.stringify(body, null, 2));
+
+  if (DALIPAY.callbackSecret) {
+    const expected = crypto
+      .createHmac('sha256', DALIPAY.callbackSecret)
+      .update(typeof rawBody === 'string' ? rawBody : JSON.stringify(body))
+      .digest('hex');
+    if (!signature || expected !== signature) {
+      console.error('❌ DaliPay webhook signature mismatch');
+      return { status: 401, body: { success: false, message: 'Invalid signature' } };
+    }
+  }
+
+  const event = body.event;
+  const data = body.data || body;
+  const refs = [data.external_id, data.reference, data.uuid].filter(Boolean);
+  const status = String(data.status || '').toLowerCase();
+
+  let foundTransaction = null;
+  let foundKey = null;
+  for (const [key, value] of global.dalipayTransactions.entries()) {
+    if (value.status === 'completed') continue;
+    if (
+      key === data.external_id ||
+      value.dalipay_uuid === data.uuid ||
+      (value.dalipay_reference && value.dalipay_reference === data.reference)
+    ) {
+      foundTransaction = value;
+      foundKey = key;
+      break;
+    }
+  }
+
+  if (!foundTransaction) {
+    console.log(`DaliPay webhook: transaction not found (refs: ${refs.join(', ') || 'none'})`);
+    // Fallback ya DB: server inaweza kuwa imerestart; PENDING DepositRequest
+    // yenye ext=<external_id> ina-credit amount iliyothibitishwa.
+    if ((event === 'collection.success' || status === 'success') && data.external_id) {
+      try {
+        const pendingReqs = await DepositRequest.findAll({
+          where: { status: 'PENDING' },
+          order: [['createdAt', 'DESC']],
+        });
+        for (const req of pendingReqs) {
+          const note = req.note || '';
+          if (!note.includes('DaliPay') || !note.includes(`ext=${data.external_id}`)) continue;
+
+          const webhookAmount = Number(data.amount) || Number(req.amount);
+          console.log(`✅ DaliPay webhook matched DB DepositRequest ${req.id} (user ${req.user_id}) — crediting`);
+          const bonusAmount = webhookAmount >= 150000 ? 10000 : 0;
+          const credResult = await creditBalance({
+            user_id: req.user_id,
+            amount: webhookAmount,
+            bonusAmount,
+            reference: generateReference('DEP'),
+            description:
+              bonusAmount > 0
+                ? `Deposit TZS ${webhookAmount} + bonus TZS ${bonusAmount}`
+                : `Deposit TZS ${webhookAmount}`,
+            depositRequestId: req.id,
+          });
+          const txnId = `DALIPAY-DB-${req.id}`;
+          global.dalipayTransactions.set(txnId, {
+            user_id: req.user_id,
+            user_phone: null,
+            amount: webhookAmount,
+            phone: req.payer_phone || null,
+            status: 'completed',
+            balance_added: true,
+            new_balance: credResult.user.balance,
+            deposit_request_id: req.id,
+            completed_at: new Date().toISOString(),
+          });
+          return { status: 200, body: { success: true, message: 'Webhook received', status: 'success' } };
+        }
+      } catch (dbErr) {
+        console.error('DaliPay webhook DB fallback error:', dbErr.message);
+      }
+    }
+    return { status: 200, body: { message: 'Transaction not found - stored for later' } };
+  }
+
+  if (foundTransaction.status === 'completed') {
+    return { status: 200, body: { message: 'Already processed' } };
+  }
+
+  if (event === 'collection.failed' || status === 'failed') {
+    foundTransaction.status = 'failed';
+    foundTransaction.updated_at = new Date().toISOString();
+    global.dalipayTransactions.set(foundKey, foundTransaction);
+    return { status: 200, body: { success: true, message: 'Webhook received', status: 'failed' } };
+  }
+
+  if (event === 'collection.success' || status === 'success') {
+    try {
+      console.log(`✅ DaliPay webhook SUCCESS → crediting user ${foundTransaction.user_id} with ${data.amount || foundTransaction.amount} TZS`);
+      await processSuccessfulDalipay(foundTransaction, foundKey, {
+        amount: data.amount,
+        reference: data.reference,
+        uuid: data.uuid,
+      });
+    } catch (error) {
+      console.error('❌ Error processing DaliPay webhook balance update:', error);
+      return { status: 500, body: { message: 'Webhook received but credit failed' } };
+    }
+  }
+
+  return { status: 200, body: { success: true, message: 'Webhook received', status: 'success' } };
+};
+
+// Poll DaliPay collection status kwa transaction moja. Inarudisha:
+// 'completed' | 'failed' | 'pending'.
+async function pollDalipayCollectionStatus(transaction) {
+  if (!transaction.dalipay_uuid) return 'pending';
+  try {
+    const response = await axios.get(
+      `${DALIPAY.baseUrl}/collections/${transaction.dalipay_uuid}/status`,
+      {
+        headers: {
+          'X-Public-Key': DALIPAY.publicKey,
+          'X-Secret-Key': DALIPAY.secretKey,
+          Accept: 'application/json',
+        },
+        timeout: 10000,
+      }
+    );
+    const raw = response.data || {};
+    const data = raw.data || raw;
+    const currentStatus = String(data.status || '').toLowerCase();
+
+    if (currentStatus === 'success') {
+      transaction.lastPolledAmount = data.amount;
+      transaction.lastPolledReference = data.reference;
+      console.log(`[DALIPAY] collection ${transaction.dalipay_uuid} → SUCCESS`);
+      return 'completed';
+    }
+    if (currentStatus === 'failed') return 'failed';
+    console.log(`[DALIPAY] collection ${transaction.dalipay_uuid} status → ${currentStatus || 'unknown'}`);
+    return 'pending';
+  } catch (e) {
+    console.error(`[DALIPAY] status poll error for ${transaction.dalipay_uuid}:`, e.message);
+    return 'pending';
+  }
+}
+
+// GET /api/money/payment/status/:transactionId  (for DaliPay-originated deposits)
+const checkDalipayStatus = async ({ user_id, transactionId }) => {
+  const transaction = global.dalipayTransactions.get(transactionId);
+  if (!transaction) throw new CustomExceptions('Transaction not found', 404);
+  if (transaction.user_id !== user_id) throw new CustomExceptions('Unauthorized', 403);
+
+  if (transaction.status === 'pending') {
+    const status = await pollDalipayCollectionStatus(transaction);
+    if (status === 'completed' && transaction.status !== 'completed') {
+      await processSuccessfulDalipay(transaction, transactionId, {
+        amount: transaction.lastPolledAmount,
+        reference: transaction.lastPolledReference,
+        uuid: transaction.dalipay_uuid,
+      });
+    } else if (status === 'failed') {
+      transaction.status = 'failed';
+      transaction.updated_at = new Date().toISOString();
+      global.dalipayTransactions.set(transactionId, transaction);
+    }
+  }
+
+  return responseBuilder.success({
+    status: 200,
+    message: 'Payment status',
+    data: {
+      transaction_id: transactionId,
+      amount: transaction.amount,
+      phone: transaction.phone,
+      status: transaction.status,
+      gateway: 'dalipay',
+      dalipay_uuid: transaction.dalipay_uuid || null,
+      reference: transaction.dalipay_reference || null,
+      created_at: transaction.created_at,
+      updated_at: transaction.updated_at,
+      new_balance: transaction.new_balance || null,
+    },
+  });
+};
+
+// ============ DALIPAY RECONCILIATION (SERVER-SIDE SAFETY NET) ============
+
+// Re-hydrate in-memory DaliPay transactions kutoka DepositRequest PENDING
+// zilizopo kwenye DB (server restart safety net).
+async function hydratePendingDalipayTransactions() {
+  try {
+    const pending = await DepositRequest.findAll({
+      where: { status: 'PENDING' },
+      order: [['createdAt', 'DESC']],
+    });
+    let restored = 0;
+    for (const req of pending) {
+      const note = req.note || '';
+      if (!note.includes('DaliPay')) continue;
+
+      const uuidMatch = note.match(/uuid=([^\s|]+)/);
+      const extMatch = note.match(/ext=([^\s|]+)/);
+      const uuid = uuidMatch ? uuidMatch[1].trim() : null;
+      const ext = extMatch ? extMatch[1].trim() : null;
+      if (!uuid && !ext) continue;
+
+      const txnId = ext || `DALIPAY-RECOVER-${req.id}`;
+      if (global.dalipayTransactions.has(txnId)) continue;
+
+      let userPhone = null;
+      try {
+        const u = await userRepository.findById(req.user_id);
+        userPhone = u ? u.phone_number : null;
+      } catch (e) {
+        // endelea na null
+      }
+
+      global.dalipayTransactions.set(txnId, {
+        user_id: req.user_id,
+        user_phone: userPhone,
+        amount: Number(req.amount) || 0,
+        phone: req.payer_phone || null,
+        status: 'pending',
+        dalipay_uuid: uuid,
+        dalipay_reference: null,
+        deposit_request_id: req.id,
+        created_at: req.createdAt || new Date().toISOString(),
+        recovered: true,
+      });
+      restored++;
+    }
+    if (restored) console.log(`[DALIPAY] rehydrated ${restored} pending deposit(s) from DB`);
+  } catch (e) {
+    console.warn('[DALIPAY] hydrate failed:', e.message);
+  }
+}
+
+// Reconciliation sweep: poll kila pending DaliPay collection na credit
+// zilizokamilika (hata kama webhook haikufika).
+async function reconcileDalipayPendingTransactions() {
+  const pending = [...global.dalipayTransactions.entries()].filter(
+    ([, v]) => v.status === 'pending' && v.dalipay_uuid
+  );
+  if (pending.length === 0) return;
+
+  for (const [key, transaction] of pending) {
+    try {
+      const status = await pollDalipayCollectionStatus(transaction);
+      if (status === 'completed' && transaction.status !== 'completed') {
+        console.log(`[DALIPAY] RECONCILE: crediting ${transaction.amount} TZS for user ${transaction.user_id}`);
+        await processSuccessfulDalipay(transaction, key, {
+          amount: transaction.lastPolledAmount,
+          reference: transaction.lastPolledReference,
+          uuid: transaction.dalipay_uuid,
+        });
+      } else if (status === 'failed') {
+        transaction.status = 'failed';
+        transaction.updated_at = new Date().toISOString();
+        global.dalipayTransactions.set(key, transaction);
+      }
+    } catch (e) {
+      console.error(`[DALIPAY] reconcile error for ${key}:`, e.message);
+    }
+  }
+}
+
+// Start the safety-net cron: inarehydrate pending rows kisha ina-poll kila dakika.
+function startDalipayReconciliation() {
+  hydratePendingDalipayTransactions();
+
+  cron.schedule('* * * * *', async () => {
+    try {
+      await hydratePendingDalipayTransactions();
+      await reconcileDalipayPendingTransactions();
+    } catch (e) {
+      console.error('[DALIPAY] reconciliation cron error:', e.message);
+    }
+  });
+
+  setTimeout(() => {
+    hydratePendingDalipayTransactions().then(() => reconcileDalipayPendingTransactions());
+  }, 7000);
+
+  console.log('[DALIPAY] Reconciliation cron started (every minute)');
+}
+
+// POST /api/money/dalipay/reconcile (ADMIN) - kulazimisha reconciliation sasa hivi.
+const runDalipayReconciliation = async () => {
+  await hydratePendingDalipayTransactions();
+  await reconcileDalipayPendingTransactions();
+
+  const tracked = [...global.dalipayTransactions.values()];
+  const pending = tracked.filter((t) => t.status === 'pending').length;
+  const completed = tracked.filter((t) => t.status === 'completed').length;
+  const failed = tracked.filter((t) => t.status === 'failed').length;
+
+  return responseBuilder.success({
+    status: 200,
+    message: 'DaliPay reconciliation completed',
+    data: {
+      tracked: tracked.length,
+      pending,
+      completed,
+      failed,
+      details: tracked.slice(0, 50).map((t) => ({
+        user_id: t.user_id,
+        amount: t.amount,
+        status: t.status,
+        dalipay_uuid: t.dalipay_uuid || null,
+        deposit_request_id: t.deposit_request_id,
+        new_balance: t.new_balance || null,
+      })),
+    },
+  });
+};
+
 // ============ UNIFIED DEPOSIT DISPATCHER ============
 
-// POST /api/money/deposit - routes to the ACTIVE gateway (PalmPesa, Snipe or AnyPay).
-const initiateDeposit = async ({ user_id, amount, phone_number }) => {
+// POST /api/money/deposit - routes to the ACTIVE gateway (DaliPay, PalmPesa, Snipe or AnyPay).
+const initiateDeposit = async ({ user_id, amount, phone_number, provider }) => {
   const gateway = getActiveGateway();
+  if (gateway === 'dalipay') {
+    return depositViaDalipay({ user_id, amount, phone_number, provider });
+  }
   if (gateway === 'anypay') {
     return depositViaAnyPay({ user_id, amount, phone_number });
   }
@@ -1313,6 +1852,9 @@ const initiateDeposit = async ({ user_id, amount, phone_number }) => {
 
 // GET /api/money/payment/status/:transactionId - works for ALL gateways.
 const checkDepositStatus = async ({ user_id, transactionId }) => {
+  if (global.dalipayTransactions.has(transactionId)) {
+    return checkDalipayStatus({ user_id, transactionId });
+  }
   if (global.palmPesaTransactions.has(transactionId)) {
     return checkPalmPesaStatus({ user_id, transactionId });
   }
@@ -1708,6 +2250,15 @@ module.exports = {
   // Provider API keys (DB-backed, admin)
   getProviderKeys,
   updateProviderKeys,
+  // DaliPay
+  depositViaDalipay,
+  dalipayWebhook,
+  checkDalipayStatus,
+  // DaliPay safety-net reconciliation (server-side)
+  startDalipayReconciliation,
+  reconcileDalipayPendingTransactions,
+  hydratePendingDalipayTransactions,
+  runDalipayReconciliation,
   // PalmPesa
   depositViaPalmPesa,
   palmPesaWebhook,

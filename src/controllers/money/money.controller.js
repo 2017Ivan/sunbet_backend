@@ -6,11 +6,12 @@ const moneyService = require('../../services/money/money.service');
 // POST /api/money/deposit - initiate a deposit via the ACTIVE gateway
 async function deposit(req, res, next) {
   try {
-    const { amount, phone_number } = req.body;
+    const { amount, phone_number, provider } = req.body;
     const result = await moneyService.initiateDeposit({
       user_id: req.user.id,
       amount,
       phone_number,
+      provider,
     });
     return res.status(result.status).json(result);
   } catch (err) {
@@ -106,6 +107,30 @@ async function anyPayWebhook(req, res, next) {
   } catch (err) {
     console.error('AnyPay Webhook handled error:', err.message);
     return res.status(200).json({ message: 'Webhook received', status: 'accepted' });
+  }
+}
+
+// POST /api/money/dalipay-webhook - PUBLIC webhook (no auth).
+// Raw body inatumika kuthibitisha X-Signature (HMAC-SHA256).
+async function dalipayWebhook(req, res, next) {
+  try {
+    const raw = req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(req.body);
+    const signature = req.headers['x-signature'];
+    const { status, body } = await moneyService.dalipayWebhook(raw, signature);
+    return res.status(status).json(body);
+  } catch (err) {
+    console.error('DaliPay Webhook handled error:', err.message);
+    return res.status(200).json({ message: 'Webhook received', status: 'accepted' });
+  }
+}
+
+// POST /api/money/dalipay/reconcile - ADMIN forces the DaliPay reconciliation sweep now
+async function dalipayReconcile(req, res, next) {
+  try {
+    const result = await moneyService.runDalipayReconciliation();
+    return res.status(result.status).json(result);
+  } catch (err) {
+    next(err);
   }
 }
 
@@ -221,6 +246,9 @@ module.exports = {
   getProviderKeys,
   updateProviderKeys,
   checkDepositStatus,
+  // DaliPay
+  dalipayWebhook,
+  dalipayReconcile,
   // PalmPesa
   depositViaPalmPesa,
   palmPesaWebhook,
